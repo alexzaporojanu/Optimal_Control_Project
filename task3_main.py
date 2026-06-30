@@ -65,9 +65,6 @@ R_lqr = np.eye(ni) * 0.1                             # peso ingresso
 # =============================================================================
 # SEZIONE 2 — CARICAMENTO TRAIETTORIA DI RIFERIMENTO
 # =============================================================================
-# Carica la traiettoria ottima generata da task2_main.py
-# Shape convention: x (ns, TT), u (ni, TT)  — tutto in colonne temporali
-
 print("\nCaricamento traiettoria di riferimento (Task 2)...")
 try:
     data         = np.load('optimal_trajectory_task2.npy', allow_pickle=True).item()
@@ -77,11 +74,9 @@ try:
     QQT_dare     = data.get('QQT', None)   # DARE matrix (se salvata da Task 2)
 
     # ---- FIX ROBUSTO DIMENSIONI ----
-    # Gestisce i casi (ns, TT) e (TT, ns) in modo uniforme
     if x_ref_raw.ndim == 3:
         x_ref_raw = x_ref_raw[:,:,-1]    # Prende ultima iterazione se 3D
     if x_ref_raw.shape[0] == ns and x_ref_raw.shape[1] != ns:
-        # Shape (4, TT) → converti in (TT, 4) per indicizzazione [t, :]
         x_ref_traj = x_ref_raw.T         # (TT, 4)
         u_ref_traj = u_ref_raw.T if u_ref_raw.shape[0] == ni else u_ref_raw
     else:
@@ -109,32 +104,21 @@ except Exception as e:
 # =============================================================================
 # SEZIONE 3 — LINEARIZZAZIONE LUNGO LA TRAIETTORIA DI RIFERIMENTO
 # =============================================================================
-# Per ogni passo t, linearizza F(x, u) in (x*_t, u*_t):
-#   A_t = ∂F/∂x |_{x*_t, u*_t}  ∈ ℝ⁴ˣ⁴
-#   B_t = ∂F/∂u |_{x*_t, u*_t}  ∈ ℝ⁴ˣ¹
-# [Rif.: Slide 10 — "Linearization along Reference Trajectory"]
-# [Rif.: Session5/3_main..., righe 34 — AA, BB construction]
-
 print("\nLinearizzazione del sistema lungo la traiettoria di riferimento...")
 A_list, B_list = [], []
 for t in range(steps):
-    x_t = x_ref_traj[t]           # (4,)
-    u_t = u_ref_traj[t]           # (1,) o scalare
+    x_t = x_ref_traj[t]
+    u_t = u_ref_traj[t]
     _, A, B = dynamics(x_t, u_t)
-    A_list.append(A)               # (4×4)
-    B_list.append(B)               # (4×1)
+    A_list.append(A)
+    B_list.append(B)
 print(f"  Linearizzazione completata: {steps} coppie (A_t, B_t)")
 
 # =============================================================================
 # SEZIONE 4 — BACKWARD RICCATI (TV-LQR Design)
 # =============================================================================
-# Usa la soluzione della DARE come costo terminale Q_T (se disponibile),
-# altrimenti usa Q_lqr.
-# [Rif.: Session5/3_main..., righe 59 — QQ_f = ctrl.dare()]
-# [Rif.: solver_ltv_lqr.py — backward_riccati()]
-
 if QQT_dare is not None:
-    QQf = QQT_dare   # DARE matrix da Task 2 (teoricamente ottimale)
+    QQf = QQT_dare
     print("\nUsando Q_T dalla DARE (caricata da Task 2).")
 else:
     QQf = Q_lqr
@@ -142,69 +126,50 @@ else:
 
 print("Calcolo Riccati backward (TV-LQR)...")
 K_gains, P_list = backward_riccati(A_list, B_list, Q_lqr, R_lqr, QQf, steps)
-# K_gains[t] : guadagno ottimo K_t ∈ ℝ^{ni×ns}  per t=0,...,steps-1
-# P_list[t]  : Riccati matrix P_t (usata come terminal cost in Task 4)
 print(f"  Backward Riccati completato.")
 print(f"  K_gains[0] = {K_gains[0].round(3)}")
 
 # =============================================================================
 # SEZIONE 5 — SIMULAZIONE TRACKING con MULTIPLE PERTURBAZIONI
 # =============================================================================
-# MIGLIORAMENTO rispetto a V4: testiamo il TV-LQR con DIVERSE condizioni
-# iniziali perturbate per valutare la robustezza del controllore.
-# [Rif.: Session5/3_main..., riga 81 — x0 iniziale]
-# [Rif.: V1/task4_mpc_tracking1.py — multi-perturbazione (esteso da qui)]
-#
-# Legge di controllo TV-LQR:
-#   u_t = u*_t + δu_t = u*_t - K_t (x_t - x*_t)
-# [Rif.: Slide 10 — "TV-LQR Control Law", eq. (10.x)]
-
 perturbations = {
     'Pert. spalla -0.2 rad': np.array([-0.2,  0.0, 0.0, 0.0]),
     'Pert. gomito +0.3 rad': np.array([ 0.0,  0.3, 0.0, 0.0]),
     'Pert. vel. spalla'    : np.array([ 0.0,  0.0, 0.3, 0.0]),
 }
 
-results = {}  # dizionario per salvare i risultati di ogni perturbazione
+results = {}
 
 print("\nSimulazione tracking LQR con perturbazioni multiple...")
 
 for label, pert in perturbations.items():
     x_sim = np.zeros((steps + 1, ns))
     u_sim = np.zeros((steps, ni))
-    x_sim[0] = x_ref_traj[0] + pert   # condizione iniziale perturbata
+    x_sim[0] = x_ref_traj[0] + pert
 
     for t in range(steps):
-        # Errore di stato rispetto alla traiettoria di riferimento
-        delta_x = x_sim[t] - x_ref_traj[t]   # δx_t = x_t - x*_t
+        delta_x = x_sim[t] - x_ref_traj[t]
 
-        # Legge TV-LQR: u = u* - K δx
-        # K_t viene dal backward Riccati [solver_ltv_lqr.py]
-        delta_u  = -K_gains[t] @ delta_x     # δu_t = -K_t δx_t
-        u_curr   = u_ref_traj[t] + delta_u   # u_t = u*_t + δu_t
+        delta_u  = -K_gains[t] @ delta_x
+        u_curr   = u_ref_traj[t] + delta_u
 
         u_sim[t] = u_curr.flatten()
-
-        # Propagazione con la dinamica REALE (nonlineare) — test di robustezza
         x_sim[t+1] = step(x_sim[t], u_curr.flatten())
 
-    # Errore finale
     err_final = np.linalg.norm(x_sim[-2] - x_ref_traj[-1])
     print(f"  [{label}]: errore finale ||x_T - x*_T|| = {err_final:.4e}")
     results[label] = {'x_sim': x_sim, 'u_sim': u_sim}
 
 # =============================================================================
-# SEZIONE 6 — PLOT RISULTATI
+# SEZIONE 6 — PLOT RISULTATI (Richiesta Assignment)
 # =============================================================================
-# Stile coerente con Session5/3_main..., righe 104-131
-
 n_pert = len(perturbations)
 colors_pert = ['#d62728', '#1f77b4', '#2ca02c', '#ff7f0e']
 
+# --- Plot 1: Traiettorie degli stati e dell'ingresso per ciascuna perturbazione ---
 fig, axs = plt.subplots(ns + ni, 1, figsize=(12, 12), sharex=True)
 fig.suptitle('Task 3 — TV-LQR Tracking (Multiple Perturbazioni)', fontsize=14)
 
-# Riferimento su tutti i subplot
 labels_x = [r'$\theta_1$ [rad]', r'$\theta_2$ [rad]',
             r'$\dot\theta_1$ [rad/s]', r'$\dot\theta_2$ [rad/s]']
 
@@ -219,7 +184,6 @@ for i, (label, res) in enumerate(results.items()):
 
     axs[ns].plot(t_axis, u_sim[:, 0], color=c, lw=1.8, label=label, alpha=0.85)
 
-# Riferimento (solo una volta)
 for j in range(ns):
     axs[j].plot(t_axis, x_ref_traj[:, j], 'k--', lw=2, label='Riferimento x*', zorder=5)
     axs[j].set_ylabel(labels_x[j], fontsize=11)
@@ -233,10 +197,11 @@ axs[ns].legend(fontsize=8, loc='best')
 axs[ns].grid(alpha=0.4)
 
 plt.tight_layout()
+plt.savefig('task3_tracking_results.png', dpi=300)
 
-# Plot dell'errore di tracking per ogni perturbazione
+# --- Plot 2: Errore di tracking per diverse condizioni iniziali (Richiesta Assignment) ---
 fig_err, ax_err = plt.subplots(figsize=(10, 5))
-fig_err.suptitle('Task 3 — Errore di Tracking TV-LQR', fontsize=14)
+fig_err.suptitle('Task 3 — Errore di Tracking TV-LQR per Diverse Condizioni Iniziali', fontsize=14)
 
 for i, (label, res) in enumerate(results.items()):
     x_sim = res['x_sim']
@@ -248,16 +213,16 @@ ax_err.set_ylabel(r'$\|x_t - x^*_t\|$', fontsize=12)
 ax_err.legend(fontsize=10, loc='best')
 ax_err.grid(alpha=0.4)
 plt.tight_layout()
+plt.savefig('task3_tracking_error.png', dpi=300)
+
 plt.show(block=True)
 
 # =============================================================================
 # SEZIONE 7 — SALVATAGGIO
 # =============================================================================
-# Salva i guadagni LQR e la lista P_list (usata da Task 4 come terminal cost)
-
 np.save('lqr_data_task3.npy', {
-    'K_gains': K_gains,   # list of (ni, ns) arrays
-    'P_list' : P_list,    # list of (ns, ns) arrays — terminal cost per MPC
+    'K_gains': K_gains,
+    'P_list' : P_list,
     'Q_lqr'  : Q_lqr,
     'R_lqr'  : R_lqr,
     'QQf'    : QQf

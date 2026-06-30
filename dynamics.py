@@ -266,37 +266,3 @@ def dynamics(xx, uu):
         B[:, i] = (_step_only(xx, ui) - _step_only(xx, ud)) / (2*eps)
 
     return xxp, A, B
-
-
-# =============================================================================
-# 5. TEST RAPIDO (solo quando lanciato direttamente)
-# =============================================================================
-if __name__ == "__main__":
-    import matplotlib.pyplot as plt
-
-    print("\n=== Test dynamics.py ===")
-    x0 = np.array([0.1, 0.0, 0.0, 0.0])
-    u0 = np.array([0.0])
-    xn, A, B = dynamics(x0, u0)
-    print(f"x0  = {x0}")
-    print(f"x1  = {xn.round(6)}")
-    print(f"A shape: {A.shape},  B shape: {B.shape}")
-    print(f"A (prima riga): {A[0].round(4)}")
-
-    # Simulazione libera per 5 secondi
-    T_sim, steps_sim = 5.0, int(5.0/dt)
-    hist = np.zeros((steps_sim, ns))
-    x = np.array([0.2, 0.0, 0.0, 0.0])
-    for t in range(steps_sim):
-        hist[t] = x
-        x, _, _ = dynamics(x, np.array([0.0]))
-
-    t_ax = np.linspace(0, T_sim, steps_sim)
-    plt.figure(figsize=(10,4))
-    plt.plot(t_ax, hist[:,0], label=r'$\theta_1$')
-    plt.plot(t_ax, hist[:,1], label=r'$\theta_2$')
-    plt.xlabel('Tempo [s]'); plt.ylabel('Angolo [rad]')
-    plt.title('Acrobot — Risposta libera (u=0)')
-    plt.legend(); plt.grid(alpha=0.4)
-    plt.tight_layout(); plt.show()
-    print("Test completato.")

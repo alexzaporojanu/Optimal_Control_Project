@@ -34,7 +34,7 @@ import dynamics as dyn
 
 def select_stepsize(stepsize_0, armijo_maxiters, cc, beta,
                     deltau, xx_ref, uu_ref, x0, uu, JJ, descent_arm,
-                    QQT, K_fb=None, xx_nom=None, plot=False):
+                    QQT, K_fb=None, xx_nom=None, plot=False, save_path=None):
     """
     Seleziona il passo α con la regola di Armijo (backtracking line search).
 
@@ -45,7 +45,7 @@ def select_stepsize(stepsize_0, armijo_maxiters, cc, beta,
     La modalità viene selezionata automaticamente in base alla presenza
     del parametro K_fb (guadagno feedback dal backward pass iDDP).
 
-    [Rif.: Session4/3_armijo.py — interfaccia identica con aggiunta K_fb]
+    [Rif.: Session4/3_armijo.py — interfaccia identica con aggiunta K_fb e save_path]
     [Rif.: Slide 07 — "Armijo Backtracking", Slide 08 — "Closed-Loop Forward Pass"]
 
     Args:
@@ -64,6 +64,7 @@ def select_stepsize(stepsize_0, armijo_maxiters, cc, beta,
         K_fb            : ndarray (ni,ns,TT) oppure None — guadagni feedback (Newton)
         xx_nom          : ndarray (ns,TT) oppure None   — traiettoria nominale x^k
         plot            : bool  — se True, mostra il plot della ricerca (debug)
+        save_path       : str   — percorso dove salvare l'immagine del plot (PNG)
 
     Returns:
         stepsize : float — passo α selezionato
@@ -72,7 +73,7 @@ def select_stepsize(stepsize_0, armijo_maxiters, cc, beta,
     ns = x0.shape[0]
     ni = uu.shape[0]
 
-    # Helper: estrae il riferimento al tempo k (gestisce sia (ns,TT) che scalare fisso)
+    # Helper: estrae il riferimento al tempo k
     if isinstance(xx_ref, np.ndarray) and xx_ref.ndim > 1:
         get_xref = lambda k: xx_ref[:, k]
     else:
@@ -97,25 +98,15 @@ def select_stepsize(stepsize_0, armijo_maxiters, cc, beta,
         xx_temp[:, 0] = x0
 
         for k in range(TT):
-            # --- Aggiornamento ingresso ---
-            du_ff = stepsize * deltau[:, k]   # termine feedforward scalato
+            du_ff = stepsize * deltau[:, k]
 
             if K_fb is not None and xx_nom is not None:
-                # CLOSED-LOOP UPDATE (Newton / iDDP) — [Slide 08]
-                # u = u_bar + α · Δu + K(x - x_bar)
-                # Il termine feedback K(x-x̄) compensale deviazioni dalla
-                # traiettoria nominale dovute alla nonlinearità del sistema
                 dx_err = xx_temp[:, k] - xx_nom[:, k]
                 du_fb  = K_fb[:, :, k] @ dx_err
                 uu_temp[:, k] = uu[:, k] + du_ff + du_fb
             else:
-                # OPEN-LOOP UPDATE (Gradient method) — [Slide 07]
-                # u = u_bar + α · Δu
                 uu_temp[:, k] = uu[:, k] + du_ff
 
-            # Propagazione dinamica — usa step() e NON dynamics() per evitare
-            # il calcolo inutile dei Jacobiani A e B (risparmio ~11x).
-            # [dyn.step() è un alias pubblico di _step_only() in dynamics.py]
             xx_temp[:, k+1] = dyn.step(xx_temp[:, k], uu_temp[:, k])
 
         # ------------------------------------------------------------------
@@ -126,46 +117,39 @@ def select_stepsize(stepsize_0, armijo_maxiters, cc, beta,
             JJ_temp += cst.stagecost(xx_temp[:, k], uu_temp[:, k],
                                      get_xref(k), get_uref(k))[0]
 
-        # Costo terminale — usa QQT passato esternamente (può essere DARE)
         JJ_temp += cst.termcost(xx_temp[:, -1], get_xref(TT - 1), QQT)[0]
 
         stepsizes.append(stepsize)
         costs_armijo.append(JJ_temp)
 
         # ------------------------------------------------------------------
-        # CONDIZIONE DI ARMIJO — [Slide 07]
-        # Accetta α se: J(u + α Δu) ≤ J(u) + c · α · ∇Jᵀ Δu
+        # CONDIZIONE DI ARMIJO
         # ------------------------------------------------------------------
         if JJ_temp > JJ + cc * stepsize * descent_arm:
-            stepsize = beta * stepsize   # backtracking: riduci il passo
+            stepsize = beta * stepsize
         else:
-            # Passo accettato
-            if plot:
+            if plot or save_path is not None:
                 _plot_armijo(stepsize_0, stepsizes, costs_armijo,
-                             JJ, descent_arm, cc)
+                             JJ, descent_arm, cc, save_path)
             return stepsize
 
         if ii == armijo_maxiters - 1:
             print("WARNING [Armijo]: nessun passo trovato con la regola di Armijo! "
                   f"Uso l'ultimo: α = {stepsize:.3e}")
+            if plot or save_path is not None:
+                _plot_armijo(stepsize_0, stepsizes, costs_armijo,
+                             JJ, descent_arm, cc, save_path)
 
     return stepsize
 
 
-def _plot_armijo(stepsize_0, stepsizes, costs_armijo, JJ, descent_arm, cc):
+def _plot_armijo(stepsize_0, stepsizes, costs_armijo, JJ, descent_arm, cc, save_path=None):
     """
-    Visualizza la ricerca di Armijo — utile per debug e presentazione.
-
-    Mostra:
-      - Andamento reale del costo J(u + α Δu) al variare di α
-      - Approssimazione lineare: J(u) + α · ∇Jᵀ Δu
-      - Soglia Armijo:           J(u) + c · α · ∇Jᵀ Δu
-
-    [Rif.: Session4/3_armijo.py — _plot Armijo, identico]
+    Visualizza e salva la ricerca di Armijo.
     """
     s_axis = np.linspace(0, stepsize_0, 20)
 
-    plt.figure(100)
+    fig = plt.figure(100)
     plt.clf()
     plt.plot(stepsizes, costs_armijo, 'k*-', markersize=8, label='$J(u^k + \\alpha \\Delta u)$')
     plt.plot(s_axis, [JJ + descent_arm * s for s in s_axis],
@@ -179,5 +163,10 @@ def _plot_armijo(stepsize_0, stepsizes, costs_armijo, JJ, descent_arm, cc):
     plt.legend(fontsize=11)
     plt.grid(alpha=0.4)
     plt.tight_layout()
+    
+    if save_path is not None:
+        plt.savefig(save_path, dpi=300)
+        print(f"  [Armijo] Grafico salvato in: {save_path}")
+        
     plt.draw()
     plt.pause(0.1)

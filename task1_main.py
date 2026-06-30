@@ -1,5 +1,5 @@
 #
-# Task 1 — Generazione Traiettoria via Newton / iDDP
+# Task 1 — Trajectory Generation via Newton / iDDP
 #           Riferimento: GRADINO (Downward ↦ Upward Equilibrium)
 #
 # Progetto Optimal Control — Parameter Set 3
@@ -15,7 +15,7 @@
 # ========
 # Trovare la sequenza di coppie {u_t}_{t=0}^{T-1} che minimizza:
 #
-#   J(x₀, u) = Σ_{t=0}^{T-1} l(x_t, u_t) + l_T(x_T) (costo)
+#   J(x₀, u) = Σ_{t=0}^{T-1} l(x_t, u_t) + l_T(x_T)
 #
 #   s.t.  x_{t+1} = F(x_t, u_t)   (dinamica discreta RK4)
 #         x_0     = x_start        (condizione iniziale)
@@ -73,9 +73,8 @@ ns   = dyn.ns         # 4 stati
 ni   = dyn.ni         # 1 ingresso
 TT   = int(tf / dt)   # Numero di passi = 1000
 
-
 # Parametri algoritmo iDDP
-max_iters = 50         # Max iterazioni (aumentato rispetto a V4 per convergenza)
+max_iters = 50         # Max iterazioni
 term_cond = 1e-4       # Tolleranza convergenza su ||Δu|| (norma gradiente)
                        # [Rif.: Session4/10_main..., riga 53 — term_cond = 1e-4]
 
@@ -85,28 +84,21 @@ beta             = 0.7    # Contrazione β ∈ (0,1)
 armijo_maxiters  = 20     # Max iterazioni backtracking
 
 # Visualizzazione iterativa (stile professore — Session4/10_main..., righe 162-303)
-# NOTA PERFORMANCE: su Windows il plot iterativo può rallentare significativamente.
-# Impostare True solo per la demo finale o su sistemi veloci.
-visu_iter = False    # True = aggiorna plot ad ogni iter (bello ma lento)
+visu_iter = False    # True = aggiorna plot ad ogni iter (bello ma lento su Windows)
 
 # =============================================================================
 # SEZIONE 2 — CARICAMENTO EQUILIBRI
 # =============================================================================
-# Gli equilibri (x_eq1, x_eq2) sono pre-calcolati da equilibrium_finding.py
-# tramite SQP con condizioni KKT [Slide 03].
-# Se il file non esiste, usa valori analitici approssimati.
-
 try:
     data    = np.load('equilibrium_data.npy', allow_pickle=True).item()
-    x_start = data['x_eq1']   # Equilibrio giù ≈ [0,0,0,0]
-    x_goal  = data['x_eq2']   # Equilibrio su  ≈ [π,0,0,0]
-    u_goal  = data['u_eq2']   # Ingresso equil. su ≈ [0]
+    x_start = data['x_eq1']   # Equilibrio a riposo (pendolo giù)
+    x_goal  = data['x_eq2']   # Equilibrio instabile (pendolo su)
+    u_goal  = data['u_eq2']
     print(f"\nEquilibri caricati da 'equilibrium_data.npy':")
     print(f"  x_start = {x_start.round(4)}")
     print(f"  x_goal  = {x_goal.round(4)}")
 except FileNotFoundError:
-    print("\nWARNING: 'equilibrium_data.npy' non trovato. "
-          "Esegui prima equilibrium_finding.py")
+    print("\nWARNING: 'equilibrium_data.npy' non trovato. Esegui prima equilibrium_finding.py")
     print("Uso valori analitici approssimati.")
     x_start = np.zeros(4)
     x_goal  = np.array([np.pi, 0.0, 0.0, 0.0])
@@ -115,24 +107,11 @@ except FileNotFoundError:
 # =============================================================================
 # SEZIONE 3 — RIFERIMENTO A GRADINO
 # =============================================================================
-# [Rif.: Slide 06 — "Step Reference Curve"]
-# [Rif.: Session4/9_reference_trajectory.py — gen(step_reference=True)]
 xx_ref, uu_ref = ref_gen.generate_step(tf, dt, x_start, x_goal)
 
 # =============================================================================
 # SEZIONE 4 — COSTO TERMINALE Q_T via DARE
 # =============================================================================
-# MIGLIORAMENTO rispetto a V4: invece di usare un Q_T ad-hoc (20000 I),
-# calcoliamo Q_T come soluzione della DARE (Discrete Algebraic Riccati Equation)
-# linearizzando all'equilibrio obiettivo.
-#
-# La DARE fornisce la soluzione del problema LQR a orizzonte INFINITO all'equilibrio:
-#   P∞ = Q + A^T P∞ A - A^T P∞ B (R + B^T P∞ B)^{-1} B^T P∞ A
-#
-# Usare QQT = P∞ come costo terminale rende il costo a orizzonte finito
-# una buona approssimazione del costo infinito (principio del "bang-bang" a fine orizzonte).
-# [Rif.: Session4/10_main..., righe 83-88]
-
 if HAS_CONTROL:
     try:
         _, A_eq, B_eq = dyn.dynamics(x_goal, u_goal)
@@ -149,22 +128,15 @@ else:
 # =============================================================================
 # SEZIONE 5 — INIZIALIZZAZIONE
 # =============================================================================
-# STRUTTURA DATI (pattern del professore — Session4/10_main..., righe 139-149):
-# xx[:, :, k] = traiettoria stati all'iterazione k
-# uu[:, :, k] = sequenza ingressi all'iterazione k
-
 xx = np.zeros((ns, TT, max_iters))   # (4, 1000, 50)
 uu = np.zeros((ni, TT, max_iters))   # (1, 1000, 50)
 JJ       = np.zeros(max_iters)        # storico del costo
 descent  = np.zeros(max_iters)        # storico ||Δu||²
 descent_arm = np.zeros(max_iters)    # storico ∇Jᵀ Δu (per Armijo)
 
-xx[:, 0, 0] = x_start   # Condizione iniziale fissata
+xx[:, 0, 0] = x_start
 
-# WARM START — "Kick" sinusoidale vicino al gradino per rompere la simmetria
-# Il gradino avviene a T/2 = 5s. Applichiamo la perturbazione in [4s, 6s].
-# Senza questo, l'ingresso nullo porta il robot a rimanere vicino all'equilibrio giù.
-# [Rif.: Session4/10_main..., riga 100-101 — "Starting at low position"]
+# WARM START — "Kick" sinusoidale
 tt_hor  = np.linspace(0, tf, TT)
 mask_kick = (tt_hor > 4.0) & (tt_hor < 6.0)
 uu[0, mask_kick, 0] = 5.0 * np.sin(5.0 * tt_hor[mask_kick])
@@ -174,18 +146,14 @@ for t in range(TT - 1):
     xx[:, t+1, 0] = dyn.step(xx[:, t, 0], uu[:, t, 0])
 
 # =============================================================================
-# SEZIONE 6 — PLOT ITERATIVO (stile professore)
+# SEZIONE 6 — PLOT ITERATIVO
 # =============================================================================
-# Replica la struttura di Session4/10_main..., righe 164-303
-# La figura viene aggiornata ad ogni iterazione con plt.pause()
-
 if visu_iter:
-    plt.ion()   # Modalità interattiva NON-BLOCCANTE — evita il freeze su Windows
+    plt.ion()
     fig_iter, axs_iter = plt.subplots(3, 1, figsize=(11, 9), sharex=True)
     fig_iter.suptitle('Task 1 — Newton/iDDP: Evoluzione Traiettoria', fontsize=14)
 
 def _ylim_safe(a, b):
-    """Calcola limiti y con margine — da Session4/10_main..., righe 252-258."""
     mn = min(np.nanmin(a), np.nanmin(b))
     mx = max(np.nanmax(a), np.nanmax(b))
     if np.isfinite(mn) and np.isfinite(mx) and mx - mn > 0:
@@ -194,13 +162,11 @@ def _ylim_safe(a, b):
     return mn - 1.0, mx + 1.0
 
 def _update_iter_plot(kk):
-    """Aggiorna il plot iterativo — [Rif.: Session4/10_main..., righe 241-303]."""
     if not visu_iter:
         return
     for ax in axs_iter:
         ax.cla()
 
-    # θ₁ — angolo link 1
     axs_iter[0].plot(tt_hor, xx[0, :, kk], color='#1f77b4', lw=2, label=r'$\theta_1$ ottimo')
     axs_iter[0].plot(tt_hor, xx_ref[0, :TT], color='#2ca02c', lw=2, ls='--', label=r'$\theta_1$ ref')
     axs_iter[0].set_ylabel(r'$\theta_1$ [rad]', fontsize=12)
@@ -211,14 +177,12 @@ def _update_iter_plot(kk):
         f'Iter {kk} — J = {JJ[kk]:.4e} | ||Δu|| = {np.sqrt(descent[kk]):.3e}',
         fontsize=12)
 
-    # θ₂ — angolo link 2
     axs_iter[1].plot(tt_hor, xx[1, :, kk], color='#17becf', lw=2, label=r'$\theta_2$ ottimo')
     axs_iter[1].plot(tt_hor, xx_ref[1, :TT], color='#9467bd', lw=2, ls='--', label=r'$\theta_2$ ref')
     axs_iter[1].set_ylabel(r'$\theta_2$ [rad]', fontsize=12)
     axs_iter[1].legend(loc='upper right', fontsize=10)
     axs_iter[1].grid(alpha=0.4)
 
-    # Ingresso u (coppia al gomito)
     axs_iter[2].plot(tt_hor, uu[0, :, kk], color='#d62728', lw=2, label=r'$\tau$ [Nm]')
     axs_iter[2].plot(tt_hor, uu_ref[0, :TT], color='#ff7f0e', lw=2, ls='--', label=r'$\tau_{ref}$')
     axs_iter[2].set_ylabel(r'$\tau$ [Nm]', fontsize=12)
@@ -240,15 +204,7 @@ converged_iter = max_iters - 1
 
 for kk in range(max_iters - 1):
 
-    # ------------------------------------------------------------------
-    # A. CALCOLO COSTO e GRADIENTI (Forward Evaluation)
-    # ------------------------------------------------------------------
-    # Calcola J^k e i termini per il backward pass:
-    #   lx_t  = ∂l/∂x,   lu_t  = ∂l/∂u
-    #   lxx_t = Q = ∂²l/∂x²,   luu_t = R = ∂²l/∂u²
-    #   A_t   = ∂F/∂x,   B_t   = ∂F/∂u
-    # [Rif.: Session4/10_main..., righe 170-203]
-
+    # A. Calcolo costo e gradienti
     JJ[kk] = 0.0
     AA  = np.zeros((ns, ns, TT))
     BB  = np.zeros((ns, ni, TT))
@@ -260,66 +216,49 @@ for kk in range(max_iters - 1):
     for t in range(TT - 1):
         xt, ut = xx[:, t, kk], uu[:, t, kk]
 
-        # Costo di stadio e gradienti [cost.py — stagecost()]
         c, gx, gu   = cst.stagecost(xt, ut, xx_ref[:, t], uu_ref[:, t])
         JJ[kk]      += c
         lx[:, t]    = gx
         lu[:, t]    = gu
-        lxx[:,:, t] = cst.QQt    # Hessiana costante per costo quadratico
+        lxx[:,:, t] = cst.QQt
         luu[:,:, t] = cst.RRt
 
-        # Linearizzazione dinamica [dynamics.py — dynamics()]
         _, A_t, B_t = dyn.dynamics(xt, ut)
         AA[:,:, t]  = A_t
         BB[:,:, t]  = B_t
 
-    # Costo terminale [cost.py — termcost()]
-    # Usa QQT calcolata dalla DARE (miglioramento rispetto a V4)
     c_T, gxT       = cst.termcost(xx[:, TT-1, kk], xx_ref[:, -1], QQT)
     JJ[kk]         += c_T
     lx[:, -1]      = gxT
-    lxx[:,:, -1]   = QQT    # Q_T da DARE all'equilibrio obiettivo
+    lxx[:,:, -1]   = QQT
 
     print(f"  Iter {kk:3d}: J = {JJ[kk]:.6e}", end="")
 
-    # ------------------------------------------------------------------
-    # B. BACKWARD PASS — Newton Step (Q-function expansion)
-    # ------------------------------------------------------------------
-    # Calcola k_t (feedforward) e K_t (feedback) risolvendo il
-    # sottoproblema LQR locale [Slide 08 — Q-function expansion]
-    # [solver_newton.py — solve_newton_step()]
-
+    # B. Backward Pass
     KK, kk_vec = solver_newton.solve_newton_step(AA, BB, lx, lu, lxx, luu, TT)
 
-    # Calcolo della norma del descent (criterio di convergenza)
-    # [Session4/10_main..., righe 205-206]
+    # Calcolo della norma del descent
     for t in range(TT - 1):
-        descent[kk]     += kk_vec[:, t].T @ kk_vec[:, t]       # ||Δu||²
-        descent_arm[kk] += lu[:, t].T    @ kk_vec[:, t]        # ∇Jᵀ Δu
+        descent[kk]     += kk_vec[:, t].T @ kk_vec[:, t]
+        descent_arm[kk] += lu[:, t].T    @ kk_vec[:, t]
 
     print(f"  | ||Δu|| = {np.sqrt(descent[kk]):.4e}")
 
     # Visualizzazione iterativa
     _update_iter_plot(kk)
 
-    # ------------------------------------------------------------------
-    # CONDIZIONE DI TERMINAZIONE
-    # ------------------------------------------------------------------
-    # Usiamo la norma del descent come criterio (come il professore):
-    #   ||Δu||² ≤ term_cond
-    # [Session4/10_main..., righe 311-315]
+    # Condizione di terminazione
     if descent[kk] <= term_cond:
         print(f"\n  CONVERGENZA RAGGIUNTA a iter {kk}: "
               f"||Δu||² = {descent[kk]:.2e} ≤ {term_cond:.0e}")
         converged_iter = kk
         break
 
-    # ------------------------------------------------------------------
-    # C. ARMIJO LINE SEARCH + FORWARD PASS (Closed-Loop Update)
-    # ------------------------------------------------------------------
-    # [armijo.py — select_stepsize()] con K_fb=KK (Newton closed-loop)
-    # [Rif.: Slide 08 — "Closed-Loop Forward Pass"]
-    # [Rif.: Session4/10_main..., righe 215-238]
+    # C. Armijo Line Search + Forward Pass
+    # Determina il percorso di salvataggio per i grafici di Armijo (Richiesta Assignment)
+    save_path_armijo = None
+    if kk in [0, 1] or kk == converged_iter:
+        save_path_armijo = f"task1_armijo_iter_{kk}.png"
 
     alpha = armijo.select_stepsize(
         stepsize_0     = 1.0,
@@ -334,13 +273,13 @@ for kk in range(max_iters - 1):
         JJ             = JJ[kk],
         descent_arm    = descent_arm[kk],
         QQT            = QQT,
-        K_fb           = KK,              # Closed-loop update (Newton)
+        K_fb           = KK,
         xx_nom         = xx[:, :, kk],
-        plot           = (kk < 3)         # Mostra plot Armijo per prime 3 iter
+        plot           = (kk < 3),
+        save_path      = save_path_armijo
     )
 
-    # Update della traiettoria con legge closed-loop:
-    # u_t^{k+1} = u_t^k + α · k_t + K_t (x_t^{k+1} - x_t^k)
+    # Rollout
     xx_new = np.zeros((ns, TT))
     uu_new = np.zeros((ni, TT))
     xx_new[:, 0] = x_start
@@ -363,13 +302,12 @@ xx_star = xx[:, :, converged_iter]
 uu_star = uu[:, :, converged_iter]
 
 # =============================================================================
-# SEZIONE 8 — PLOT FINALI
+# SEZIONE 8 — PLOT FINALI (Richiesta Assignment)
 # =============================================================================
-# Stile coerente con Session4/10_main..., righe 322-379
 
-# --- Plot convergenza ---
+# --- 1. Costo e norma del gradiente (semi-logaritmica) ---
 fig_conv, axs_conv = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
-fig_conv.suptitle('Task 1 — Convergenza Newton/iDDP', fontsize=14)
+fig_conv.suptitle('Task 1 — Convergenza Newton/iDDP (Scala Log)', fontsize=14)
 
 iters_ran = np.arange(converged_iter + 1)
 
@@ -387,12 +325,11 @@ axs_conv[1].set_ylabel(r'$\|\Delta u\|^2$ (log)', fontsize=12)
 axs_conv[1].set_xlabel('Iterazione $k$', fontsize=12)
 axs_conv[1].grid(alpha=0.4)
 axs_conv[1].legend(fontsize=11)
-
 plt.tight_layout()
+plt.savefig('task1_convergence_metrics.png', dpi=300)
 
-# --- Plot traiettoria ottima vs riferimento ---
-fig_opt, axs_opt = plt.subplots(ns + ni, 1, figsize=(11, 10),
-                                 sharex=True)
+# --- 2. Traiettoria Ottima vs Riferimento (Gradino) ---
+fig_opt, axs_opt = plt.subplots(ns + ni, 1, figsize=(11, 10), sharex=True)
 fig_opt.suptitle('Task 1 — Traiettoria Ottima vs Riferimento (Gradino)', fontsize=14)
 
 labels_x = [r'$\theta_1$ [rad]', r'$\theta_2$ [rad]',
@@ -416,22 +353,61 @@ axs_opt[ns].set_ylabel(r'$\tau$ [Nm]', fontsize=11)
 axs_opt[ns].set_xlabel('Tempo [s]', fontsize=12)
 axs_opt[ns].legend(loc='best', fontsize=9)
 axs_opt[ns].grid(alpha=0.4)
+plt.tight_layout()
+plt.savefig('task1_optimal_trajectory.png', dpi=300)
+
+# --- 3. Traiettorie Intermedie (Richiesta Assignment) ---
+# Mostra la transizione tra l'ipotesi iniziale e il risultato finale
+fig_inter, axs_inter = plt.subplots(2, 1, figsize=(11, 8), sharex=True)
+fig_inter.suptitle('Task 1 — Evoluzione delle Traiettorie Intermedie', fontsize=14)
+
+# Seleziona iterazioni significative da plottare
+iters_to_plot = [0, 1, 3, converged_iter]
+iters_to_plot = [i for i in iters_to_plot if i <= converged_iter]
+if converged_iter not in iters_to_plot:
+    iters_to_plot.append(converged_iter)
+
+# Subplot 1: Theta 1
+axs_inter[0].plot(tt_hor, xx_ref[0, :TT], 'k--', lw=2, label='Reference (Gradino)')
+for kk_plot in iters_to_plot:
+    lbl = f"Iter {kk_plot}"
+    if kk_plot == 0:
+        lbl = "Iter 0 (Warm Start)"
+    elif kk_plot == converged_iter:
+        lbl = "Iter Ottima (Converged)"
+    axs_inter[0].plot(tt_hor, xx[0, :, kk_plot], label=lbl, alpha=0.8)
+axs_inter[0].set_ylabel(r'$\theta_1$ [rad]', fontsize=12)
+axs_inter[0].grid(alpha=0.4)
+axs_inter[0].legend(fontsize=9, loc='upper right')
+
+# Subplot 2: Theta 2
+axs_inter[1].plot(tt_hor, xx_ref[1, :TT], 'k--', lw=2, label='Reference')
+for kk_plot in iters_to_plot:
+    lbl = f"Iter {kk_plot}"
+    if kk_plot == 0:
+        lbl = "Iter 0 (Warm Start)"
+    elif kk_plot == converged_iter:
+        lbl = "Iter Ottima (Converged)"
+    axs_inter[1].plot(tt_hor, xx[1, :, kk_plot], label=lbl, alpha=0.8)
+axs_inter[1].set_ylabel(r'$\theta_2$ [rad]', fontsize=12)
+axs_inter[1].set_xlabel('Tempo [s]', fontsize=12)
+axs_inter[1].grid(alpha=0.4)
+axs_inter[1].legend(fontsize=9, loc='upper right')
 
 plt.tight_layout()
+plt.savefig('task1_intermediate_trajectories.png', dpi=300)
+
 plt.show(block=True)
 
 # =============================================================================
 # SEZIONE 9 — SALVATAGGIO
 # =============================================================================
-# La traiettoria ottima (x*, u*) è salvata per uso in Task 2, 3, 4.
-# Convenzione shape: x (ns, TT), u (ni, TT) — colonne temporali
-
 np.save('optimal_trajectory_task1.npy', {
-    'x': xx_star,      # (4, TT)
-    'u': uu_star,      # (1, TT)
+    'x': xx_star,
+    'u': uu_star,
     't': tt_hor,
     'J': JJ[:converged_iter+1],
-    'QQT': QQT         # salva anche la DARE matrix per eventuale riferimento
+    'QQT': QQT
 })
 print(f"\nTraiettoria Task 1 salvata in 'optimal_trajectory_task1.npy'")
 print(f"  Costo finale:   J = {JJ[converged_iter]:.4e}")

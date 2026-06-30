@@ -1,5 +1,5 @@
 #
-# Task 2 — Generazione Traiettoria via Newton / iDDP
+# Task 2 — Trajectory Generation via Newton / iDDP
 #           Riferimento: SMOOTH (Quintico) con struttura a 3 Fasi
 #
 # Progetto Optimal Control — Parameter Set 3
@@ -81,14 +81,6 @@ except FileNotFoundError:
 # =============================================================================
 # SEZIONE 3 — RIFERIMENTO A 3 FASI (Smooth Quintico)
 # =============================================================================
-# [Rif.: reference_trajectory.py — generate_extended()]
-# [Rif.: Slide 06 — "Smooth Reference Trajectory"]
-#
-# La funzione generate_extended costruisce automaticamente:
-#   - N_pre  passi costanti a x_start
-#   - N_move passi con transizione smooth (polinomio quintico)
-#   - N_post passi costanti a x_goal
-
 t_pre, t_move, t_post = 5.0, 10.0, 5.0
 
 xx_ref, uu_ref, TT, tf, N_pre, N_move = ref_gen.generate_extended(
@@ -105,9 +97,6 @@ print(f"  xx_ref shape: {xx_ref.shape},  uu_ref shape: {uu_ref.shape}")
 # =============================================================================
 # SEZIONE 4 — COSTO TERMINALE Q_T via DARE
 # =============================================================================
-# Identico a Task 1 — DARE all'equilibrio obiettivo
-# [Rif.: Session4/10_main..., righe 83-88]
-
 if HAS_CONTROL:
     try:
         _, A_eq, B_eq = dyn.dynamics(x_goal, u_goal)
@@ -130,10 +119,7 @@ descent_arm = np.zeros(max_iters)
 
 xx[:, 0, 0] = x_start
 
-# WARM START MIRATO — applicato SOLO durante la fase di movimento
-# [N_pre, N_pre + N_move): fascia temporale del kick sinusoidale
-# Il kick è centrato sulla transizione — è qui che il robot deve
-# immagazzinare energia per raggiungere la posizione eretta.
+# WARM START MIRATO
 t_kick_local = np.linspace(0, t_move, N_move)
 uu[0, N_pre:N_pre + N_move, 0] = 5.0 * np.sin(3.0 * t_kick_local)
 
@@ -145,7 +131,7 @@ for t in range(TT - 1):
 # SEZIONE 6 — PLOT ITERATIVO
 # =============================================================================
 if visu_iter:
-    plt.ion()   # Non-bloccante — evita freeze su Windows
+    plt.ion()
     fig_iter, axs_iter = plt.subplots(3, 1, figsize=(12, 9), sharex=True)
     fig_iter.suptitle('Task 2 — Newton/iDDP: Evoluzione Traiettoria', fontsize=14)
 
@@ -163,7 +149,6 @@ def _update_iter_plot(kk):
     for ax in axs_iter:
         ax.cla()
 
-    # Linee verticali per delimitare le 3 fasi
     t_trans_start = t_pre
     t_trans_end   = t_pre + t_move
 
@@ -244,14 +229,18 @@ for kk in range(max_iters - 1):
         converged_iter = kk
         break
 
-    # C. Armijo + Forward Pass Closed-Loop
+    # C. Armijo + Forward Pass
+    save_path_armijo = None
+    if kk in [0, 1] or kk == converged_iter:
+        save_path_armijo = f"task2_armijo_iter_{kk}.png"
+
     alpha = armijo.select_stepsize(
         stepsize_0=1.0, armijo_maxiters=armijo_maxiters,
         cc=cc, beta=beta, deltau=kk_vec,
         xx_ref=xx_ref, uu_ref=uu_ref, x0=x_start,
         uu=uu[:,:,kk], JJ=JJ[kk], descent_arm=descent_arm[kk],
         QQT=QQT, K_fb=KK, xx_nom=xx[:,:,kk],
-        plot=(kk < 3)
+        plot=(kk < 3), save_path=save_path_armijo
     )
 
     xx_new = np.zeros((ns, TT)); uu_new = np.zeros((ni, TT))
@@ -273,10 +262,12 @@ xx_star = xx[:,:, converged_iter]
 uu_star = uu[:,:, converged_iter]
 
 # =============================================================================
-# SEZIONE 8 — PLOT FINALI
+# SEZIONE 8 — PLOT FINALI (Richiesta Assignment)
 # =============================================================================
+
+# --- 1. Costo e norma del gradiente (semi-logaritmica) ---
 fig_conv, axs_conv = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
-fig_conv.suptitle('Task 2 — Convergenza Newton/iDDP', fontsize=14)
+fig_conv.suptitle('Task 2 — Convergenza Newton/iDDP (Scala Log)', fontsize=14)
 iters_ran = np.arange(converged_iter + 1)
 axs_conv[0].semilogy(iters_ran, JJ[:converged_iter+1], 'o-', color='#1f77b4', lw=2, label='$J(u^k)$')
 axs_conv[0].set_ylabel('Costo $J$'); axs_conv[0].grid(alpha=0.4); axs_conv[0].legend()
@@ -284,7 +275,9 @@ axs_conv[1].semilogy(iters_ran, descent[:converged_iter+1], 's--', color='#d6272
 axs_conv[1].axhline(term_cond, color='k', ls=':', label=f'Soglia {term_cond:.0e}')
 axs_conv[1].set_ylabel('$||\\Delta u||^2$'); axs_conv[1].set_xlabel('Iterazione'); axs_conv[1].grid(alpha=0.4); axs_conv[1].legend()
 plt.tight_layout()
+plt.savefig('task2_convergence_metrics.png', dpi=300)
 
+# --- 2. Traiettoria Ottima vs Riferimento Smooth ---
 fig_opt, axs_opt = plt.subplots(ns+ni, 1, figsize=(12, 10), sharex=True)
 fig_opt.suptitle('Task 2 — Traiettoria Ottima vs Riferimento Smooth (3-Fasi)', fontsize=14)
 labels_x = [r'$\theta_1$ [rad]', r'$\theta_2$ [rad]', r'$\dot\theta_1$ [rad/s]', r'$\dot\theta_2$ [rad/s]']
@@ -298,20 +291,59 @@ for i in range(ns):
 axs_opt[ns].plot(tt_hor, uu_star[0,:], color='#d62728', lw=2, label=r'$\tau$ [Nm]')
 axs_opt[ns].set_ylabel(r'$\tau$ [Nm]'); axs_opt[ns].set_xlabel('Tempo [s]')
 axs_opt[ns].legend(fontsize=9); axs_opt[ns].grid(alpha=0.4)
-plt.tight_layout(); plt.show(block=True)
+plt.tight_layout()
+plt.savefig('task2_optimal_trajectory.png', dpi=300)
+
+# --- 3. Traiettorie Intermedie (Richiesta Assignment) ---
+fig_inter, axs_inter = plt.subplots(2, 1, figsize=(11, 8), sharex=True)
+fig_inter.suptitle('Task 2 — Evoluzione delle Traiettorie Intermedie', fontsize=14)
+
+iters_to_plot = [0, 1, 3, converged_iter]
+iters_to_plot = [i for i in iters_to_plot if i <= converged_iter]
+if converged_iter not in iters_to_plot:
+    iters_to_plot.append(converged_iter)
+
+# Theta 1
+axs_inter[0].plot(tt_hor, xx_ref[0, :TT], 'k--', lw=2, label='Reference (Smooth)')
+for kk_plot in iters_to_plot:
+    lbl = f"Iter {kk_plot}"
+    if kk_plot == 0:
+        lbl = "Iter 0 (Warm Start)"
+    elif kk_plot == converged_iter:
+        lbl = "Iter Ottima (Converged)"
+    axs_inter[0].plot(tt_hor, xx[0, :, kk_plot], label=lbl, alpha=0.8)
+axs_inter[0].set_ylabel(r'$\theta_1$ [rad]', fontsize=12)
+axs_inter[0].grid(alpha=0.4)
+axs_inter[0].legend(fontsize=9, loc='upper right')
+
+# Theta 2
+axs_inter[1].plot(tt_hor, xx_ref[1, :TT], 'k--', lw=2, label='Reference')
+for kk_plot in iters_to_plot:
+    lbl = f"Iter {kk_plot}"
+    if kk_plot == 0:
+        lbl = "Iter 0 (Warm Start)"
+    elif kk_plot == converged_iter:
+        lbl = "Iter Ottima (Converged)"
+    axs_inter[1].plot(tt_hor, xx[1, :, kk_plot], label=lbl, alpha=0.8)
+axs_inter[1].set_ylabel(r'$\theta_2$ [rad]', fontsize=12)
+axs_inter[1].set_xlabel('Tempo [s]', fontsize=12)
+axs_inter[1].grid(alpha=0.4)
+axs_inter[1].legend(fontsize=9, loc='upper right')
+
+plt.tight_layout()
+plt.savefig('task2_intermediate_trajectories.png', dpi=300)
+
+plt.show(block=True)
 
 # =============================================================================
 # SEZIONE 9 — SALVATAGGIO
 # =============================================================================
-# Salvataggio in formato (ns, TT) — colonne = passi temporali
-# Coerente con il formato atteso da task3_main.py e task4_main.py
-
 np.save('optimal_trajectory_task2.npy', {
-    'x'    : xx_star,   # (4, TT) — traiettoria stati ottima
-    'u'    : uu_star,   # (1, TT) — sequenza ingressi ottima
-    't'    : tt_hor,    # (TT,)   — asse temporale
-    'QQT'  : QQT,       # DARE matrix per eventuale riuso
-    'N_pre': N_pre,     # per riferimento alle fasi temporali
+    'x'    : xx_star,
+    'u'    : uu_star,
+    't'    : tt_hor,
+    'QQT'  : QQT,
+    'N_pre': N_pre,
 })
 print(f"\nTraiettoria Task 2 salvata in 'optimal_trajectory_task2.npy'")
 print(f"  Costo finale: J = {JJ[converged_iter]:.4e}")

@@ -86,20 +86,16 @@ ipopt_opts = {
 # =============================================================================
 # SEZIONE 2 — CARICAMENTO DATI (Traiettoria + Guadagni Riccati)
 # =============================================================================
-# Carica la traiettoria di riferimento (Task 2) e la Riccati P_t (Task 3)
-
 print("\nCaricamento dati...")
 
-# Traiettoria di riferimento
 try:
     data2       = np.load('optimal_trajectory_task2.npy', allow_pickle=True).item()
-    x_ref_raw   = data2['x']   # (4, TT) o (TT, 4)
-    u_ref_raw   = data2['u']   # (1, TT) o (TT, 1)
+    x_ref_raw   = data2['x']
+    u_ref_raw   = data2['u']
     t_axis      = data2['t']
 
-    # Fix dimensioni (vedi task3_main.py per la spiegazione)
     if x_ref_raw.shape[0] == ns and x_ref_raw.shape[1] != ns:
-        x_ref_traj = x_ref_raw.T    # (TT, 4)
+        x_ref_traj = x_ref_raw.T
         u_ref_traj = u_ref_raw.T if u_ref_raw.shape[0] == ni else u_ref_raw
     else:
         x_ref_traj = x_ref_raw
@@ -115,10 +111,9 @@ except FileNotFoundError:
     print("ERRORE: 'optimal_trajectory_task2.npy' non trovato. Esegui task2_main.py")
     exit()
 
-# Riccati P_t da Task 3
 try:
     data3   = np.load('lqr_data_task3.npy', allow_pickle=True).item()
-    P_list  = data3['P_list']    # list di (4×4) — Riccati al tempo t
+    P_list  = data3['P_list']
     print(f"  Dati LQR Task 3 caricati: {len(P_list)} Riccati matrices")
     USE_RICCATI_TERMINAL = True
 
@@ -131,10 +126,6 @@ except FileNotFoundError:
 # =============================================================================
 # SEZIONE 3 — LINEARIZZAZIONE LUNGO LA TRAIETTORIA DI RIFERIMENTO
 # =============================================================================
-# Come in Task 3, linearizza F(x*, u*) per ogni step temporale
-# per costruire il modello LTV usato dalla predizione MPC.
-# [Rif.: Slide 11 — "LTV Prediction Model in MPC"]
-
 print("\nLinearizzazione lungo la traiettoria di riferimento...")
 A_list, B_list = [], []
 for t in range(steps):
@@ -154,24 +145,14 @@ def solve_mpc_step(delta_x0, t_idx, A_list, B_list, P_list,
     Formulazione in VARIABILI DI DEVIAZIONE δx, δu [Slide 11]:
         min  Σ_{k=0}^{T_pred-1} (δx_k^T Q δx_k + δu_k^T R δu_k) + δx_T^T P_T δx_T
         s.t. δx_{k+1} = A_{t+k} δx_k + B_{t+k} δu_k   (LTV dynamics)
-             δx_0 = delta_x0                             (stato iniziale)
+             δx_0 = delta_x0
              |u*_{t+k} + δu_k| ≤ U_MAX                  (vincolo coppia assoluta)
-
-    Il costo terminale P_T proviene dalla soluzione Riccati di Task 3.
-    [Rif.: Session6/solver.py — unconstrained_lqr/solver_linear_mpc()]
-    [Rif.: Slide 11 — "MPC Optimization Problem"]
-
-    Returns:
-        delta_u0 : ndarray (ni,) — prima azione ottima δu_t (da applicare)
-        delta_x_pred : ndarray (ns, T_pred) — predizione dello stato
-        status   : str — 'ok' o 'failed'
     """
-    # Costruzione orizzonte predittivo (evita di uscire dai dati disponibili)
     horizon = min(T_pred, steps - t_idx)
 
     opti = ca.Opti()
-    DX   = opti.variable(ns, horizon + 1)   # δx_{t+k}  k=0,...,T
-    DU   = opti.variable(ni, horizon)        # δu_{t+k}  k=0,...,T-1
+    DX   = opti.variable(ns, horizon + 1)
+    DU   = opti.variable(ni, horizon)
 
     cost = 0.0
 
@@ -180,26 +161,19 @@ def solve_mpc_step(delta_x0, t_idx, A_list, B_list, P_list,
         A_k = ca.DM(A_list[t_k])
         B_k = ca.DM(B_list[t_k])
 
-        # Costo di stadio: δx^T Q δx + δu^T R δu
         cost += ca.mtimes([DX[:, k].T, ca.DM(Q), DX[:, k]])
         cost += ca.mtimes([DU[:, k].T, ca.DM(R), DU[:, k]])
 
-        # Vincolo dinamica LTV: δx_{k+1} = A_k δx_k + B_k δu_k
         opti.subject_to(DX[:, k+1] == A_k @ DX[:, k] + B_k @ DU[:, k])
 
-        # Vincolo ingresso ASSOLUTO: |u_ref + δu| ≤ U_MAX
-        # [Rif.: Slide 11 — "Input Constraints in MPC"]
         t_k_abs  = min(t_idx + k, steps - 1)
         u_ref_k  = float(u_ref_traj[t_k_abs, 0])
         opti.subject_to(opti.bounded(-U_MAX - u_ref_k, DU[:, k], U_MAX - u_ref_k))
 
-    # Costo terminale: δx_T^T P_T δx_T
-    # Usa la Riccati P_{t+T} di Task 3 (se disponibile)
     t_term = min(t_idx + horizon, len(P_list) - 1)
     P_term = P_list[t_term] if USE_RICCATI_TERMINAL else Q
     cost   += ca.mtimes([DX[:, horizon].T, ca.DM(P_term), DX[:, horizon]])
 
-    # Condizione iniziale δx_0 = x_t - x*_t
     opti.subject_to(DX[:, 0] == ca.DM(delta_x0.reshape(ns, 1)))
 
     opti.minimize(cost)
@@ -212,7 +186,6 @@ def solve_mpc_step(delta_x0, t_idx, A_list, B_list, P_list,
         return delta_u0, delta_x_pred, 'ok'
 
     except Exception as e:
-        # Fallback: usa lo stato corrente senza correzione
         print(f"  [MPC] IPOPT fallito a t={t_idx}: {str(e)[:60]}...")
         return np.zeros(ni), np.zeros((ns, horizon + 1)), 'failed'
 
@@ -220,11 +193,6 @@ def solve_mpc_step(delta_x0, t_idx, A_list, B_list, P_list,
 # =============================================================================
 # SEZIONE 5 — LOOP MPC (Receding Horizon)
 # =============================================================================
-# PERTURBAZIONI MULTIPLE (come in Task 3)
-# Per ogni perturbazione iniziale, eseguiamo il loop MPC completo
-# e confrontiamo le traiettorie risultanti.
-# [Rif.: Slide 11 — "Receding Horizon Strategy"]
-
 perturbations = {
     'Pert. spalla -0.2 rad': np.array([-0.2,  0.0, 0.0, 0.0]),
     'Pert. gomito +0.3 rad': np.array([ 0.0,  0.3, 0.0, 0.0]),
@@ -239,7 +207,7 @@ for label, pert in perturbations.items():
 
     x_sim = np.zeros((steps + 1, ns))
     u_sim = np.zeros((steps, ni))
-    x_sim[0] = x_ref_traj[0] + pert   # condizione iniziale perturbata
+    x_sim[0] = x_ref_traj[0] + pert
 
     failed_steps = 0
 
@@ -248,10 +216,8 @@ for label, pert in perturbations.items():
             err_t = np.linalg.norm(x_sim[t] - x_ref_traj[t])
             print(f"  t={t:4d}/{steps}: ||δx|| = {err_t:.3e}", end="")
 
-        # Stato attuale dell'errore rispetto alla traiettoria
-        delta_x0 = x_sim[t] - x_ref_traj[t]   # δx_t = x_t - x*_t
+        delta_x0 = x_sim[t] - x_ref_traj[t]
 
-        # Risoluzione MPC
         delta_u0, _, status = solve_mpc_step(
             delta_x0, t, A_list, B_list, P_list,
             Q_mpc, R_mpc, x_ref_traj, u_ref_traj,
@@ -261,15 +227,12 @@ for label, pert in perturbations.items():
         if status == 'failed':
             failed_steps += 1
 
-        # Applicazione dell'ingresso (receding horizon: applica solo δu_t)
-        # u_t = u*_t + δu_t  [Slide 11 — "Receding Horizon Application"]
         u_applied   = u_ref_traj[t].flatten() + delta_u0
         u_sim[t]    = u_applied
 
         if t % 100 == 0:
             print(f"  | u_applied = {u_applied[0]:.2f}")
 
-        # Propagazione dinamica REALE (nonlineare)
         x_sim[t+1] = step(x_sim[t], u_applied)
 
     err_final = np.linalg.norm(x_sim[-2] - x_ref_traj[-1])
@@ -278,7 +241,7 @@ for label, pert in perturbations.items():
     results[label] = {'x_sim': x_sim, 'u_sim': u_sim}
 
 # =============================================================================
-# SEZIONE 6 — PLOT RISULTATI
+# SEZIONE 6 — PLOT RISULTATI (Richiesta Assignment)
 # =============================================================================
 colors_pert = ['#d62728', '#1f77b4', '#2ca02c']
 
@@ -311,16 +274,19 @@ axs[ns].set_xlabel('Tempo [s]', fontsize=12)
 axs[ns].legend(fontsize=8, loc='best')
 axs[ns].grid(alpha=0.4)
 plt.tight_layout()
+plt.savefig('task4_tracking_results.png', dpi=300)
 
-# Plot errore di tracking (confronto con LQR Task 3)
+# Plot errore di tracking (Richiesta Assignment)
 fig_err, ax_err = plt.subplots(figsize=(10, 5))
-fig_err.suptitle('Task 4 — Errore di Tracking MPC', fontsize=14)
+fig_err.suptitle('Task 4 — Errore di Tracking MPC per Diverse Condizioni Iniziali', fontsize=14)
 for i, (label, res) in enumerate(results.items()):
     err_t = np.linalg.norm(res['x_sim'][:-1] - x_ref_traj, axis=1)
     ax_err.plot(t_axis, err_t, color=colors_pert[i], lw=2, label=label)
 ax_err.set_xlabel('Tempo [s]'); ax_err.set_ylabel(r'$\|x_t - x^*_t\|$')
 ax_err.legend(fontsize=10); ax_err.grid(alpha=0.4)
 plt.tight_layout()
+plt.savefig('task4_tracking_error.png', dpi=300)
+
 plt.show(block=True)
 
 # =============================================================================
