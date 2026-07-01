@@ -193,12 +193,12 @@ if __name__ == "__main__":
     x_eq2, u_eq2 = find_equilibrium(x_up_guess, u_up_guess, "UPWARD (θ₁=π)")
 
     # Salvataggio per riuso negli altri task
-    np.save('equilibrium_data.npy', {
+    np.save('data/equilibrium_data.npy', {
         'x_eq1': x_eq1,
         'x_eq2': x_eq2,
         'u_eq1': u_eq1,
         'u_eq2': u_eq2
     })
-    print("\nDati di equilibrio salvati in 'equilibrium_data.npy'")
+    print("\nDati di equilibrio salvati in 'data/equilibrium_data.npy'")
     print(f"x_eq1 (giù):   {x_eq1.round(4)}")
     print(f"x_eq2 (su):    {x_eq2.round(4)}")
