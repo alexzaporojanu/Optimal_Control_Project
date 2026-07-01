@@ -89,10 +89,10 @@ ipopt_opts = {
 print("\nCaricamento dati...")
 
 try:
-    data2       = np.load('optimal_trajectory_task2.npy', allow_pickle=True).item()
-    x_ref_raw   = data2['x']
-    u_ref_raw   = data2['u']
-    t_axis      = data2['t']
+    data_dict2       = np.load('data/optimal_trajectory_task2.npy', allow_pickle=True).item()
+    x_ref_raw   = data_dict2['x']
+    u_ref_raw   = data_dict2['u']
+    t_axis      = data_dict2['t']
 
     if x_ref_raw.shape[0] == ns and x_ref_raw.shape[1] != ns:
         x_ref_traj = x_ref_raw.T
@@ -112,13 +112,14 @@ except FileNotFoundError:
     exit()
 
 try:
-    data3   = np.load('lqr_data_task3.npy', allow_pickle=True).item()
-    P_list  = data3['P_list']
+    data_dict3   = np.load('data/lqr_data_task3.npy', allow_pickle=True).item()
+    P_list  = data_dict3['P_list']
+    K_gains = data_dict3['K_gains']
     print(f"  Dati LQR Task 3 caricati: {len(P_list)} Riccati matrices")
     USE_RICCATI_TERMINAL = True
 
 except FileNotFoundError:
-    print("  WARNING: 'lqr_data_task3.npy' non trovato.")
+    print("  WARNING: 'data/lqr_data_task3.npy' non trovato.")
     print("  Uso Q_T = Q_mpc come terminal cost (sub-ottimale).")
     USE_RICCATI_TERMINAL = False
     P_list = [Q_mpc] * (steps + T_pred + 10)
@@ -292,7 +293,7 @@ plt.show(block=True)
 # =============================================================================
 # SEZIONE 7 — SALVATAGGIO
 # =============================================================================
-np.save('mpc_results_task4.npy', {
+np.save('data/mpc_results_task4.npy', {
     'results': results,
     't_axis' : t_axis,
     'T_pred' : T_pred,

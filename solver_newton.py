@@ -1,107 +1,169 @@
 #
-# Acrobot — Backward Pass Newton / iDDP (Iterative DDP)
-# Progetto Optimal Control — Parameter Set 3
-#
-# Riferimento teorico:
-#   [Slide 08] Second-Order Closed-Loop Methods — sezione "iDDP / Newton"
-#   [Slide 07] Gradient Method — sezione "Backward Pass (costate equations)"
-#   [Jacobson & Mayne, 1970] — Differential Dynamic Programming
-#   [Session4/10_main_gradient_optcon_method.py] — struttura backward pass
-#
-# ALGORITMO iDDP — BACKWARD PASS
-# ================================
-# Il backward pass risolve, partendo da t=T e andando indietro fino a t=0,
-# il sottoproblema LQR locale ottenuto LINEARIZZANDO la dinamica e
-# ESPANDENDO il costo al 2° ordine intorno alla traiettoria corrente.
-#
-# TEOREMA (DDP — Differential Dynamic Programming):
-# La funzione valore ottima V_t(δx) può essere approssimata localmente come:
-#
-#   V_t(δx) ≈ ½ δxᵀ P_t δx + p_tᵀ δx + cost_to_go
-#
-# dove (P_t, p_t) soddisfano la ricorsione di Riccati:
-#   P_t = Q_{xx,t} + K_tᵀ Q_{uu,t} K_t + K_tᵀ Q_{ux,t} + Q_{ux,t}ᵀ K_t
-#   p_t = Q_{x,t}  + K_tᵀ Q_{uu,t} k_t + K_tᵀ Q_{u,t}  + Q_{ux,t}ᵀ k_t
-#
-# con i termini della Q-FUNCTION EXPANSION [Slide 08, Sec. 3]:
-#   Q_{x}   = lx_t  + A_tᵀ p_{t+1}
-#   Q_{u}   = lu_t  + B_tᵀ p_{t+1}
-#   Q_{xx}  = lxx_t + A_tᵀ P_{t+1} A_t
-#   Q_{uu}  = luu_t + B_tᵀ P_{t+1} B_t
-#   Q_{ux}  = B_tᵀ P_{t+1} A_t
-#
-# MINIMIZZAZIONE LOCALE rispetto a δu:
-#   ∂Q/∂δu = Q_{uu} δu + Q_{ux} δx + Q_{u} = 0
-#   δu* = -Q_{uu}⁻¹ Q_{u}  -  Q_{uu}⁻¹ Q_{ux} δx
-#       = k_t               +  K_t δx
-#
-# Il passo feedforward k_t = -Q_{uu}⁻¹ Q_{u}  è la DIREZIONE DI NEWTON
-# (equivale al gradiente precondizionato dalla curvatura locale).
-#
-#
-# Acrobot — Backward Pass Newton / iDDP (Iterative DDP)
-# Progetto Optimal Control — Parameter Set 3
+# Optimal control of an Acrobot
+# Newton Closed Loop Method
 #
 
 import numpy as np
+import scipy as sp
+import matplotlib.pyplot as plt 
+import dynamics as dyn
+import cost as cst
+import solver_ltv_lqr as lqr
+import armijo as arm
+import data as cfg
+import control as ctrl
 
-def solve_newton_step(AA, BB, lx, lu, lxx, luu, TT):
+def newton_method(xx, uu, xx_ref, uu_ref, x0, max_iters, task_number, armijo_plot=True, armijo_plot_number=2, save_path_armijo_base=None):
     """
-    Backward Pass iDDP — Computes the optimal feedback gains (K_t) and feedforward steps (k_t)
-    for a given trajectory using the iDDP (iterative Differential Dynamic Programming) method.
-    """
-    ns_loc = AA.shape[0]
-    ni_loc = BB.shape[1]
+    Regularized Newton's method for optimal control of an Acrobot.
 
-    KK     = np.zeros((ni_loc, ns_loc, TT))   # guadagni feedback
-    kk_vec = np.zeros((ni_loc, TT))            # passi feedforward
+    Parameters
+    ----------
+    xx : array, shape (ns, TT, max_iters+1)        Decision variable states.
+    uu : array, shape (ni, TT, max_iters+1)        Decision variable inputs.
+    xx_ref : array, shape (ns, TT)                 Reference curve states.
+    uu_ref : array, shape (ni, TT)                 Reference curve inputs.
+    x0 : array, shape (ns,)                        Initial condition.
+    max_iters : int                                Maximum number of iterations.
+    task_number : int                              Task number, either 1 or 2.
+    armijo_plot : bool, optional                   Flag to plot Armijo rule
+    armijo_plot_number : int, optional             Number of iterations to plot Armijo rule
+    save_path_armijo_base : str, optional          Base path for saving Armijo plots.
+
+    Returns
+    -------
+    xx : array, shape (ns, TT, max_iters+1)        Decision variable states at each iteration.
+    uu : array, shape (ni, TT, max_iters+1)        Decision variable inputs at each iteration.
+    descent : array, shape (max_iters+1,)          Descent at each iteration.
+    J : array, shape (max_iters+1,)                Cost at each iteration.
+    kk : int                                       Number of iterations.
+    """
     
-    # Initialize expected descent for Armijo condition
-    expected_descent = 0.0
+    ns = cfg.ns
+    ni = cfg.ni
+    TT = uu.shape[1]
 
-    # Inizializzazione con il Costo Terminale
-    P = lxx[:, :, -1].copy()   
-    p = lx[:, -1].copy()       
+    # ARMIJO PARAMETERS
+    c = cfg.armijo_c
+    beta = cfg.armijo_beta
+    armijo_maxiters = cfg.armijo_maxiters   
+    stepsize_0 = cfg.armijo_stepsize0         
+    term_cond = cfg.term_cond
 
-    # Backward Recursion: da t=T-1 a t=0 
-    for t in reversed(range(TT - 1)):
+    # Import the cost matrices 
+    if task_number == 1:
+        Qt, Rt, QT = cfg.Q_task1, cfg.R_task1, cfg.QT_task1
+    elif task_number == 2:
+        Qt, Rt, QT = cfg.Q_task2, cfg.R_task2, cfg.QT_task2
+    else: 
+        print("\n\n\nInvalid task number, stopping the algorithm...")
+        quit()
+    
+    #############################################
+    # Computing QQT as the solution of the discrete algebraic Riccati equation
+    ##############################################
+    dfx_ref, dfu_ref = dyn.dynamics(xx_ref[:,-1], uu_ref[:,-1])[1:]
+    AA_ref = dfx_ref
+    BB_ref = dfu_ref
 
-        At = AA[:, :, t]   
-        Bt = BB[:, :, t]   
+    try:
+        QT = ctrl.dare(AA_ref, BB_ref, Qt, Rt)[0]
+    except Exception as e:
+        print(f"Warning: DARE failed, using fallback QT. Error: {e}")
+        # QT remains what it was from cfg
 
-        q_x  = lx[:, t]       
-        q_u  = lu[:, t]       
-        q_xx = lxx[:, :, t]   
-        q_uu = luu[:, :, t]   
+    # Linearization
+    A = np.zeros((ns, ns, TT))
+    B = np.zeros((ns, ni, TT))
 
-        # Q-Function Expansion 
-        Qx  = q_x + At.T @ p           
-        Qu  = q_u + Bt.T @ p           
-        Qxx = q_xx + At.T @ P @ At     
-        Quu = q_uu + Bt.T @ P @ Bt     
-        Qux = Bt.T @ P @ At            
+    # Derivatives/Gradients of the cost (affine terms of the cost)
+    q = np.zeros((ns, TT))
+    r = np.zeros((ni, TT))
 
-        # Regolarizzazione Levenberg-Marquardt
-        Quu_reg = Quu + 1e-2 * np.eye(ni_loc)
+    # Initial conditions
+    xx0 = np.zeros((ns,))
 
-        try:
-            k_t = -np.linalg.solve(Quu_reg, Qu)    
-            K_t = -np.linalg.solve(Quu_reg, Qux)   
-        except np.linalg.LinAlgError:
-            print(f"  [solver_newton] WARNING: Hessiana singolare a t={t}. Aumento regolarizzazione a 1e-1.")
-            Quu_extra = Quu_reg + 1e-1 * np.eye(ni_loc)
-            k_t = -np.linalg.solve(Quu_extra, Qu)
-            K_t = -np.linalg.solve(Quu_extra, Qux)
+    # Cost matrices (regularized - so with only cost Hessian)
+    Qtilda = np.zeros((ns, ns, TT))
+    Rtilda = np.zeros((ni, ni, TT))
+    Stilda = np.zeros((ni, ns, TT))
 
-        KK[:, :, t]  = K_t
-        kk_vec[:, t] = k_t
+    # lambda for the co-state equation
+    lmbd = np.zeros((ns, TT, max_iters+1))    
+
+    # Cost and descent direction 
+    dJ = np.zeros((ni, TT, max_iters+1))       
+    J = np.zeros(max_iters+1)                 
+    descent = np.zeros(max_iters+1)           
+    descent_arm = np.zeros(max_iters+1)       
+
+    # Decision variables
+    deltax = np.zeros((ns, TT, max_iters+1)) 
+    deltau = np.zeros((ni, TT, max_iters+1)) 
+
+    ################################################################################################################
+
+    for kk in range(max_iters):
+        J[kk] = 0
+
+        for tt in range(TT-1):
+            temp_cost = cst.stagecost(xx[:,tt,kk], uu[:,tt,kk], xx_ref[:,tt], uu_ref[:,tt], Qt, Rt)[0]
+            J[kk] += temp_cost
+            fx, fu = dyn.dynamics(xx[:,tt,kk], uu[:,tt,kk])[1:]
+            A[:,:,tt] = fx
+            B[:,:,tt] = fu
+            
+            Qtilda[:,:,tt] = Qt
+            Rtilda[:,:,tt] = Rt
+
+        term_cost, qT, QTilda = cst.termcost(xx[:,-1,kk], xx_ref[:,-1], QT)
+        J[kk] += term_cost
+
+        # Descent direction calculation
+        lmbd_temp = qT
+        lmbd[:,TT-1,kk] = lmbd_temp.squeeze()
         
-        # [FIX]: Calcolo esatto della derivata direzionale: Qu^T * k_t
-        expected_descent += (Qu.T @ k_t).item()
+        for tt in reversed(range(TT-1)):                        
+            qt, rt = cst.stagecost(xx[:,tt, kk], uu[:,tt,kk], xx_ref[:,tt], uu_ref[:,tt], Qt, Rt)[1:3]          
 
-        # Aggiornamento Value Function (Bellman) 
-        P = Qxx + K_t.T @ Quu @ K_t + K_t.T @ Qux + Qux.T @ K_t
-        p = Qx  + K_t.T @ Quu @ k_t + K_t.T @ Qu  + Qux.T @ k_t
+            lmbd_temp = A[:,:,tt].T @ lmbd[:,tt+1,kk][:,None] + qt.reshape(-1, 1)       # costate equation
+            dJ_temp   = B[:,:,tt].T @ lmbd[:,tt+1,kk][:,None] + rt.reshape(-1, 1)       # gradient of J wrt u 
+            
+            q[:,tt] = qt.squeeze()
+            r[:,tt] = rt.squeeze()
+            lmbd[:,tt,kk] = lmbd_temp.squeeze()
+            dJ[:,tt,kk] = dJ_temp.squeeze()
 
-    # Restituiamo anche expected_descent per la regola di Armijo
-    return KK, kk_vec, expected_descent
+        # Solve the Affine LQR problem
+        deltax[:,:,kk], deltau[:,:,kk], KK, sigma, _ = lqr.ltv_LQR_affine(A, B, Qtilda, Rtilda, Stilda, QTilda, TT, xx0, q, r, qT.squeeze())
+
+        for tt in reversed(range(TT-1)): 
+            descent[kk] += abs(dJ[:,tt,kk].T @ deltau[:,tt,kk])
+            descent_arm[kk] += dJ[:,tt,kk].T @ deltau[:,tt,kk] 
+
+        # Determine armijo save path if plotting is enabled
+        save_path = f"{save_path_armijo_base}_{kk}.png" if save_path_armijo_base and armijo_plot and (kk < 1 or kk%10 == 0 or kk==armijo_plot_number or kk==7) else None
+
+        stepsize = arm.select_stepsize(stepsize_0, armijo_maxiters, c, beta, deltau[:, :, kk], xx_ref, uu_ref, x0, uu[:, :, kk], xx[:, :, kk], KK, sigma, J[kk], descent_arm[kk], kk, Qt, Rt, QT, armijo_plot, armijo_plot_number, save_path=save_path)
+
+        # Update the current solution
+        xx_temp = np.zeros((ns,TT))
+        uu_temp = np.zeros((ni,TT))
+
+        xx_temp[:,0] = x0
+
+        for tt in range(TT-1):
+            uu_temp[:,tt] = uu[:,tt,kk] + KK[:,:,tt] @ (xx_temp[:,tt] - xx[:,tt,kk]) + stepsize * sigma[:,tt]
+            xx_temp[:,tt+1] = dyn.step(xx_temp[:,tt], uu_temp[:,tt])
+
+        xx[:,:,kk+1] = xx_temp
+        uu[:,:,kk+1] = uu_temp
+
+        # Termination condition
+        print(f'  Iter = {kk:3d} \t Descent = {descent[kk]:.3e} \t Cost = {J[kk]:.3e}')
+
+        if descent[kk] <= term_cond:
+            max_iters = kk
+            break
+
+    return xx[:, :, :kk+2], uu[:, :, :kk+2], descent, descent_arm, J, kk

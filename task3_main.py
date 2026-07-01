@@ -67,11 +67,11 @@ R_lqr = np.eye(ni) * 0.1                             # peso ingresso
 # =============================================================================
 print("\nCaricamento traiettoria di riferimento (Task 2)...")
 try:
-    data         = np.load('optimal_trajectory_task2.npy', allow_pickle=True).item()
-    x_ref_raw    = data['x']    # (4, TT) o (TT, 4) — gestiamo entrambi
-    u_ref_raw    = data['u']    # (1, TT) o (TT, 1)
-    t_axis       = data['t']    # (TT,)
-    QQT_dare     = data.get('QQT', None)   # DARE matrix (se salvata da Task 2)
+    data_dict         = np.load('data/optimal_trajectory_task2.npy', allow_pickle=True).item()
+    x_ref_raw    = data_dict['x']    # (4, TT) o (TT, 4) — gestiamo entrambi
+    u_ref_raw    = data_dict['u']    # (1, TT) o (TT, 1)
+    t_axis       = data_dict['t']    # (TT,)
+    QQT_dare     = data_dict.get('QQT', None)   # DARE matrix (se salvata da Task 2)
 
     # ---- FIX ROBUSTO DIMENSIONI ----
     if x_ref_raw.ndim == 3:
@@ -220,7 +220,7 @@ plt.show(block=True)
 # =============================================================================
 # SEZIONE 7 — SALVATAGGIO
 # =============================================================================
-np.save('lqr_data_task3.npy', {
+np.save('data/lqr_data_task3.npy', {
     'K_gains': K_gains,
     'P_list' : P_list,
     'Q_lqr'  : Q_lqr,

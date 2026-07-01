@@ -79,4 +79,4 @@ def termcost(xT, xT_ref, QT):
     llT = 0.5 * dx.T @ QT @ dx
     lTx = (QT @ dx).flatten()
 
-    return llT.squeeze(), lTx
+    return llT.squeeze(), lTx, QT
