@@ -164,6 +164,7 @@ def newton_method(xx, uu, xx_ref, uu_ref, x0, max_iters, task_number, armijo_plo
 
         if descent[kk] <= term_cond:
             max_iters = kk
+            print(f"Convergence achieved at iteration {kk}. Terminating optimization.")
             break
 
     return xx[:, :, :kk+2], uu[:, :, :kk+2], descent, descent_arm, J, kk

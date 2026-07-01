@@ -132,11 +132,10 @@ def select_stepsize(stepsize_0, armijo_maxiters, cc, beta, deltau, xx_ref, uu_re
             plt.ylabel("$g(\\gamma^k)$")
             plt.legend()
             plt.title(f"Armijo rule at iteration k = {kk} | Cost J={JJ:.3e} | Descent={abs(descent_arm):.3e}")
-            plt.draw()
+            plt.tight_layout()
 
             if save_path is not None:
                   plt.savefig(save_path)
-            plt.show(block=False)
-            plt.pause(0.001)
+            plt.pause(1)
 
       return stepsize

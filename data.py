@@ -26,7 +26,7 @@ f2  = 1.0   # Viscous friction joint 2 [N*m*s]
 
 # SOLVER PARAMETERS (Newton / iDDP / Armijo)
 max_iters_task1 = 100       # Maximum iteration for step reference (faster to converge)
-max_iters_task2 = 150      # Maximum iterations for smooth reference (slower to converge)
+max_iters_task2 = 100      # Maximum iterations for smooth reference (slower to converge)
 term_cond       = 1e-4     # Tolerance on the norm of the gradient ||Δu||^2
 
 # Parametri Armijo Line Search
@@ -40,11 +40,11 @@ armijo_plot_resolution = 51 # Number of steps for Armijo plots
 # TASK 1 (Step Reference)
 # Discontinous reference. The acrobot should do aggressive manouvres
 # Low value to the states in order to build up the inertia
-Q_task1  = np.diag([2.0, 2.0, 0.01, 0.01])
-R_task1  = np.array([[1e-3]])
+Q_task1  = np.diag([0.20, 0.20, 0.001, 0.001])
+R_task1  = np.array([[1e-5]])
 
 # QT_task1 
-QT_task1 = np.diag([20000.0, 20000.0, 1.0, 1.0]) 
+QT_task1 = np.diag([200.0, 2000000.0, 1.0, 1.0]) 
 
 
 # TASK 2 (Smooth Quintic Reference)

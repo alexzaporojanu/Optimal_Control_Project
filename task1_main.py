@@ -25,7 +25,6 @@ except ImportError:
 # CONFIGURATION & INITIALIZATION
 print("=" * 60)
 print("   Task 1: Trajectory Generation — Step Reference")
-print("   Algorithm: Newton / iDDP")
 print("=" * 60)
 
 # Create output directories for neatness
@@ -97,7 +96,7 @@ xx, uu, descent, descent_arm, JJ, converged_iter = solver_newton.newton_method(
     task_number=1, 
     armijo_plot=True, 
     armijo_plot_number=2, 
-    save_path_armijo_base="figs/task1_armijo"
+    save_path_armijo_base="figs/task1_armijo",
 )
 
 # Extract the final optimal trajectories

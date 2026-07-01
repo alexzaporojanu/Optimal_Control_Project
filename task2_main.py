@@ -27,7 +27,6 @@ except ImportError:
 # =============================================================================
 print("=" * 60)
 print("   Task 2: Trajectory Generation — Smooth Reference (3-Phase)")
-print("   Algorithm: Newton / iDDP")
 print("=" * 60)
 
 # Create output directories for neatness
