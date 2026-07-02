@@ -47,6 +47,7 @@ plt.rcParams.update({'font.size': 13})
 
 from dynamics        import dynamics, step
 from solver_ltv_lqr  import backward_riccati   # [NUOVO] — modulo dedicato
+import animation as an
 
 # =============================================================================
 # SEZIONE 1 — CONFIGURAZIONE
@@ -163,59 +164,135 @@ for label, pert in perturbations.items():
 # =============================================================================
 # SEZIONE 6 — PLOT RISULTATI (Richiesta Assignment)
 # =============================================================================
-n_pert = len(perturbations)
-colors_pert = ['#d62728', '#1f77b4', '#2ca02c', '#ff7f0e']
 
-# --- Plot 1: Traiettorie degli stati e dell'ingresso per ciascuna perturbazione ---
-fig, axs = plt.subplots(ns + ni, 1, figsize=(12, 12), sharex=True)
-fig.suptitle('Task 3 — TV-LQR Tracking (Multiple Perturbazioni)', fontsize=14)
+def plot_results_task3(time, xx_ref, uu_ref, xx_sim, uu_sim, label_name, pert_idx):
+    """
+    Plot comparison Reference (Task 2 Opt) vs LQR Tracking (Task 3).
+    Layout matches reference project.
+    """
+    # --- FIGURE 1: STATE TRACKING (Pos & Vel) & ERRORS ---
+    fig, axs = plt.subplots(4, 2, figsize=(16, 14), sharex=True)
+    fig.suptitle(f'Task 3: LQR Tracking Performance - {label_name}', fontsize=16, fontweight='bold')
 
-labels_x = [r'$\theta_1$ [rad]', r'$\theta_2$ [rad]',
-            r'$\dot\theta_1$ [rad/s]', r'$\dot\theta_2$ [rad/s]']
+    # --- 1.1 Theta 1 Position ---
+    ax = axs[0, 0]
+    ax.plot(time, np.degrees(xx_ref[:, 0]), 'k--', label='Ref', alpha=0.7)
+    ax.plot(time, np.degrees(xx_sim[:, 0]), 'b-', linewidth=2, label='LQR Link 1')
+    ax.set_ylabel(r'Pos $\theta_1$ [deg]')
+    ax.set_title('Link 1 Position', fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='best', fontsize='small')
+
+    # --- 1.2 Theta 2 Position ---
+    ax = axs[0, 1]
+    ax.plot(time, np.degrees(xx_ref[:, 1]), 'k--', label='Ref', alpha=0.7)
+    ax.plot(time, np.degrees(xx_sim[:, 1]), 'r-', linewidth=2, label='LQR Link 2')
+    ax.set_ylabel(r'Pos $\theta_2$ [deg]')
+    ax.set_title('Link 2 Position', fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='best', fontsize='small')
+
+    # --- 2.1 Error Theta 1 ---
+    ax = axs[1, 0]
+    err_pos1 = np.degrees(xx_sim[:, 0] - xx_ref[:, 0])
+    ax.plot(time, err_pos1, color='dodgerblue', linewidth=1.5, label=r'Error $\theta_1$')
+    ax.set_ylabel(r'Err $\theta_1$ [deg]')
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='upper right', fontsize='small')
+
+    # --- 2.2 Error Theta 2 ---
+    ax = axs[1, 1]
+    err_pos2 = np.degrees(xx_sim[:, 1] - xx_ref[:, 1])
+    ax.plot(time, err_pos2, color='tomato', linewidth=1.5, label=r'Error $\theta_2$')
+    ax.set_ylabel(r'Err $\theta_2$ [deg]')
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='upper right', fontsize='small')
+
+    # --- 3.1 Velocity Theta 1 ---
+    ax = axs[2, 0]
+    ax.plot(time, np.degrees(xx_ref[:, 2]), 'k--', label='Ref', alpha=0.7)
+    ax.plot(time, np.degrees(xx_sim[:, 2]), 'b-', linewidth=2, label='LQR Vel 1')
+    ax.set_ylabel(r'Vel $\dot{\theta}_1$ [deg/s]')
+    ax.set_title('Link 1 Velocity', fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='best', fontsize='small')
+
+    # --- 3.2 Velocity Theta 2 ---
+    ax = axs[2, 1]
+    ax.plot(time, np.degrees(xx_ref[:, 3]), 'k--', label='Ref', alpha=0.7)
+    ax.plot(time, np.degrees(xx_sim[:, 3]), 'r-', linewidth=2, label='LQR Vel 2')
+    ax.set_ylabel(r'Vel $\dot{\theta}_2$ [deg/s]')
+    ax.set_title('Link 2 Velocity', fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='best', fontsize='small')
+
+    # --- 4.1 Error Vel 1 ---
+    ax = axs[3, 0]
+    err_vel1 = np.degrees(xx_sim[:, 2] - xx_ref[:, 2])
+    ax.plot(time, err_vel1, color='dodgerblue', linewidth=1.5, label=r'Error $\dot{\theta}_1$')
+    ax.set_ylabel(r'Err $\dot{\theta}_1$ [deg/s]')
+    ax.set_xlabel('Time [s]')
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='upper right', fontsize='small')
+
+    # --- 4.2 Error Vel 2 ---
+    ax = axs[3, 1]
+    err_vel2 = np.degrees(xx_sim[:, 3] - xx_ref[:, 3])
+    ax.plot(time, err_vel2, color='tomato', linewidth=1.5, label=r'Error $\dot{\theta}_2$')
+    ax.set_ylabel(r'Err $\dot{\theta}_2$ [deg/s]')
+    ax.set_xlabel('Time [s]')
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='upper right', fontsize='small')
+    
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.92)
+    plt.savefig(f'figs/task3_states_pert_{pert_idx}.png', dpi=300)
+    plt.show(block=False)
+
+    # --- FIGURE 2: INPUT & INPUT ERROR ---
+    fig2, axs2 = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+    fig2.suptitle(f'Task 3: Control Input ({label_name})', fontsize=14, fontweight='bold')
+    
+    uu_ref_plot = np.copy(uu_ref); uu_ref_plot[-1, :] = uu_ref_plot[-2, :]
+    uu_sim_plot = np.copy(uu_sim); uu_sim_plot[-1, :] = uu_sim_plot[-2, :]
+
+    # 1. Input Comparison
+    ax = axs2[0]
+    ax.step(time, uu_ref_plot[:, 0], 'k--', where='post', label='Ref Input', alpha=0.6)
+    ax.step(time, uu_sim_plot[:, 0], 'g-', where='post', linewidth=2, label='LQR Input')
+    ax.set_ylabel(r'Torque [Nm]')
+    ax.set_title('Control Input', fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='upper right')
+
+    # 2. Input Error
+    ax = axs2[1]
+    err_u = uu_sim_plot[:, 0] - uu_ref_plot[:, 0]
+    ax.step(time, err_u, 'seagreen', where='post', label=r'$\Delta u$')
+    ax.set_ylabel(r'Err $\tau$ [Nm]')
+    ax.set_xlabel('Time [s]')
+    ax.set_title(r'Input Deviation ($\Delta u$)', fontweight='bold', fontsize=10)
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='upper right')
+    
+    plt.tight_layout()
+    plt.savefig(f'figs/task3_input_pert_{pert_idx}.png', dpi=300)
+    plt.show(block=False)
+
+import os
+os.makedirs('figs', exist_ok=True)
 
 for i, (label, res) in enumerate(results.items()):
-    x_sim = res['x_sim']
-    u_sim = res['u_sim']
-    c = colors_pert[i]
-
-    for j in range(ns):
-        axs[j].plot(t_axis, x_sim[:-1, j], color=c, lw=1.8,
-                    label=label, alpha=0.85)
-
-    axs[ns].plot(t_axis, u_sim[:, 0], color=c, lw=1.8, label=label, alpha=0.85)
-
-for j in range(ns):
-    axs[j].plot(t_axis, x_ref_traj[:, j], 'k--', lw=2, label='Riferimento x*', zorder=5)
-    axs[j].set_ylabel(labels_x[j], fontsize=11)
-    axs[j].legend(fontsize=8, loc='best')
-    axs[j].grid(alpha=0.4)
-
-axs[ns].plot(t_axis, u_ref_traj[:, 0], 'k--', lw=2, label='Riferimento u*', zorder=5)
-axs[ns].set_ylabel(r'$\tau$ [Nm]', fontsize=11)
-axs[ns].set_xlabel('Tempo [s]', fontsize=12)
-axs[ns].legend(fontsize=8, loc='best')
-axs[ns].grid(alpha=0.4)
-
-plt.tight_layout()
-plt.savefig('task3_tracking_results.png', dpi=300)
-
-# --- Plot 2: Errore di tracking per diverse condizioni iniziali (Richiesta Assignment) ---
-fig_err, ax_err = plt.subplots(figsize=(10, 5))
-fig_err.suptitle('Task 3 — Errore di Tracking TV-LQR per Diverse Condizioni Iniziali', fontsize=14)
-
-for i, (label, res) in enumerate(results.items()):
-    x_sim = res['x_sim']
-    err_t = np.linalg.norm(x_sim[:-1] - x_ref_traj, axis=1)
-    ax_err.plot(t_axis, err_t, color=colors_pert[i], lw=2, label=label)
-
-ax_err.set_xlabel('Tempo [s]', fontsize=12)
-ax_err.set_ylabel(r'$\|x_t - x^*_t\|$', fontsize=12)
-ax_err.legend(fontsize=10, loc='best')
-ax_err.grid(alpha=0.4)
-plt.tight_layout()
-plt.savefig('task3_tracking_error.png', dpi=300)
-
-plt.show(block=True)
+    # In task3_main.py, u_sim has shape (steps, ni) and x_sim (steps+1, ns). 
+    # To plot we need them the same length as t_axis.
+    x_sim_plot = res['x_sim'][:-1, :]
+    u_sim_plot = res['u_sim']
+    plot_results_task3(t_axis, x_ref_traj, u_ref_traj, x_sim_plot, u_sim_plot, label, i+1)
+    
+    # Animate the trajectory vs the reference
+    print(f"\nAvvio animazione per: {label}")
+    # Traspone gli array per l'animazione (4, T)
+    an.animate_trajectory(t_axis, x_sim_plot.T, x_ref_traj.T, title=f"Task 3 LQR Tracking: {label}")
 
 # =============================================================================
 # SEZIONE 7 — SALVATAGGIO

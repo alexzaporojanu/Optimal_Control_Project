@@ -64,6 +64,7 @@ xx_ref, uu_ref = ref_gen.generate_step(tf, data.dt, x_start, x_goal)
 if HAS_CONTROL:
     _, A_eq, B_eq = dyn.dynamics(x_goal, u_goal)
     QQT = ctrl.dare(A_eq, B_eq, Q_task, R_task)[0]
+    QQT = QQT * 10000.0
 else:
     QQT = data.QT_task1
 
@@ -107,7 +108,7 @@ uu_star = uu[:, :, converged_iter]
 # FINAL PLOTS
 # --- Plot 1: Convergence Metrics (Cost and Step Size) ---
 fig_conv, axs_conv = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
-fig_conv.suptitle('Task 1 — Newton/iDDP Convergence', fontsize=14)
+fig_conv.suptitle('Task 1 — Newton Convergence', fontsize=14)
 
 iters_ran = np.arange(converged_iter + 1)
 axs_conv[0].semilogy(iters_ran, JJ[:converged_iter+1], 'o-', color='blue', lw=2, label='Actual Cost $J(u^k)$')

@@ -13,7 +13,8 @@ import armijo as arm
 import data as cfg
 import control as ctrl
 
-def newton_method(xx, uu, xx_ref, uu_ref, x0, max_iters, task_number, armijo_plot=True, armijo_plot_number=2, save_path_armijo_base=None):
+def newton_method(xx, uu, xx_ref, uu_ref, x0, max_iters, task_number,
+                  armijo_plot=True, armijo_plot_number=2, save_path_armijo_base=None):
     """
     Regularized Newton's method for optimal control of an Acrobot.
 
@@ -58,19 +59,7 @@ def newton_method(xx, uu, xx_ref, uu_ref, x0, max_iters, task_number, armijo_plo
     else: 
         print("\n\n\nInvalid task number, stopping the algorithm...")
         quit()
-    
-    #############################################
-    # Computing QQT as the solution of the discrete algebraic Riccati equation
-    ##############################################
-    dfx_ref, dfu_ref = dyn.dynamics(xx_ref[:,-1], uu_ref[:,-1])[1:]
-    AA_ref = dfx_ref
-    BB_ref = dfu_ref
 
-    try:
-        QT = ctrl.dare(AA_ref, BB_ref, Qt, Rt)[0]
-    except Exception as e:
-        print(f"Warning: DARE failed, using fallback QT. Error: {e}")
-        # QT remains what it was from cfg
 
     # Linearization
     A = np.zeros((ns, ns, TT))

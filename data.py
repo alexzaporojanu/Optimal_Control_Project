@@ -30,7 +30,7 @@ max_iters_task2 = 100      # Maximum iterations for smooth reference (slower to 
 term_cond       = 1e-4     # Tolerance on the norm of the gradient ||Δu||^2
 
 # Parametri Armijo Line Search
-armijo_c        = 0.5      # Reduction factor (sufficient decrease)
+armijo_c        = 0.5     # Reduction factor (sufficient decrease)
 armijo_beta     = 0.7      # Contraction factor of the step
 armijo_maxiters = 20       # Maximum number of bisections per step
 armijo_stepsize0 = 1       # Initial Armijo Step Size for k=0
@@ -40,21 +40,21 @@ armijo_plot_resolution = 51 # Number of steps for Armijo plots
 # TASK 1 (Step Reference)
 # Discontinous reference. The acrobot should do aggressive manouvres
 # Low value to the states in order to build up the inertia
-Q_task1  = np.diag([0.20, 0.20, 0.001, 0.001])
-R_task1  = np.array([[1e-5]])
+Q_task1  = np.diag([1.0, 0.10, 0.001, 0.001])
+R_task1  = np.array([[1e-2]])
 
 # QT_task1 
-QT_task1 = np.diag([200.0, 2000000.0, 1.0, 1.0]) 
+QT_task1 = np.diag([10000.0, 80000.0, 1.0, 1.0]) 
 
 
 # TASK 2 (Smooth Quintic Reference)
 # More feasible reference we can lift the values of the states.
 # If it goes in overflow raise the values of R and reduce Q
-Q_task2  = np.diag([2.0, 2.0, 0.1, 0.1])
+Q_task2  = np.diag([2.0, 0.2, 0.1, 0.1])
 R_task2  = np.array([[0.01]])
 
 # QT_task2 (Fallback senza DARE)
-QT_task2 = np.diag([10000.0, 10000.0, 1.0, 1.0]) 
+QT_task2 = np.diag([10000.0, 80000.0, 1.0, 1.0]) 
 
 
 # TASK 3 & 4 (LQR / MPC Tracking)

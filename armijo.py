@@ -136,6 +136,6 @@ def select_stepsize(stepsize_0, armijo_maxiters, cc, beta, deltau, xx_ref, uu_re
 
             if save_path is not None:
                   plt.savefig(save_path)
-            plt.pause(1)
+            plt.close()
 
       return stepsize
