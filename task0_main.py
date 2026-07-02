@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import os
 import dynamics as dyn
 import data
+import animation as an
 
 print("=" * 60)
 print("   Task 0: Passive Dynamics Sanity Check (Free Fall)")
@@ -15,9 +16,10 @@ print("=" * 60)
 
 # Create output directories if they don't exist
 os.makedirs('data', exist_ok=True)
+os.makedirs('figs', exist_ok=True)
 
 # 1. SIMULATION PARAMETERS
-tf = 10.0                          # Simulate for 10 seconds
+tf = 30.0                          # Simulate for 10 seconds
 TT = int(tf / data.dt)             # Number of time steps
 tt_hor = np.linspace(0, tf, TT)    # Time vector
 
@@ -57,6 +59,7 @@ for i in range(data.ns):
 
 axs[-1].set_xlabel('Time [s]')
 plt.tight_layout()
+plt.savefig('figs/task0_passive_dynamics.png', dpi=300)
 
 # =============================================================================
 # 5. STANDARDIZED TRAJECTORY SAVING
@@ -69,5 +72,8 @@ np.save(npy_save_path, {
 })
 print(f"\nTask 0 trajectory safely saved to '{npy_save_path}'")
 
-# Block=True ensures the window stays open until you manually close it
-plt.show(block=True)
+# Block=False so we can proceed to animation
+plt.show(block=False)
+
+print("\nGenerating animation...")
+an.animate_trajectory(tt_hor, xx, title="Task 0: Passive Dynamics (Free Fall)")

@@ -12,15 +12,8 @@ import data
 import dynamics as dyn
 import reference_trajectory as ref_gen
 import solver_newton
-import cost as cst
-import armijo
 
-# Try to load the control library to solve the Discrete Algebraic Riccati Equation (DARE)
-try:
-    import control as ctrl
-    HAS_CONTROL = True
-except ImportError:
-    HAS_CONTROL = False
+# =============================================================================
 
 # =============================================================================
 # SECTION 1 — CONFIGURATION & INITIALIZATION
@@ -63,12 +56,8 @@ xx_ref, uu_ref, TT, tf, N_pre, N_move = ref_gen.generate_extended(
 )
 tt_hor = np.linspace(0, tf, TT)
 
-# Terminal cost matrix QQT computation (Shape: 4x4)
-if HAS_CONTROL:
-    _, A_eq, B_eq = dyn.dynamics(x_goal, u_goal)
-    QQT = ctrl.dare(A_eq, B_eq, Q_task, R_task)[0]
-else:
-    QQT = data.QT_task2
+# Use the terminal cost matrix QT defined in data.py
+QQT = data.QT_task2
 
 # =============================================================================
 # SECTION 3 — INITIAL GUESS (WARM START)
@@ -106,7 +95,9 @@ xx, uu, descent, descent_arm, JJ, converged_iter = solver_newton.newton_method(
     uu_ref=uu_ref, 
     x0=x_start, 
     max_iters=data.max_iters_task2, 
-    task_number=2, 
+    Qt=Q_task, 
+    Rt=R_task, 
+    QT=data.QT_task2, 
     armijo_plot=True, 
     armijo_plot_number=2, 
     save_path_armijo_base="figs/task2_armijo"

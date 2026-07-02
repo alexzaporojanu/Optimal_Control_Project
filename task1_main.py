@@ -12,15 +12,6 @@ import data
 import dynamics as dyn
 import reference_trajectory as ref_gen
 import solver_newton
-import cost as cst
-import armijo
-
-# Try to load the control library to solve the Discrete Algebraic Riccati Equation (DARE)
-try:
-    import control as ctrl
-    HAS_CONTROL = True
-except ImportError:
-    HAS_CONTROL = False
 
 # CONFIGURATION & INITIALIZATION
 print("=" * 60)
@@ -60,14 +51,6 @@ except FileNotFoundError:
 # uu_ref shape: (1, 1000)
 xx_ref, uu_ref = ref_gen.generate_step(tf, data.dt, x_start, x_goal)
 
-# Terminal cost matrix QQT computation (Shape: 4x4)
-if HAS_CONTROL:
-    _, A_eq, B_eq = dyn.dynamics(x_goal, u_goal)
-    QQT = ctrl.dare(A_eq, B_eq, Q_task, R_task)[0]
-    QQT = QQT * 10000.0
-else:
-    QQT = data.QT_task1
-
  
 # INITIAL GUESS
 # Initialize arrays to store trajectories across all iterations
@@ -94,7 +77,9 @@ xx, uu, descent, descent_arm, JJ, converged_iter = solver_newton.newton_method(
     uu_ref=uu_ref, 
     x0=x_start, 
     max_iters=data.max_iters_task1, 
-    task_number=1, 
+    Qt=Q_task,
+    Rt=R_task,
+    QT=data.QT_task1,
     armijo_plot=True, 
     armijo_plot_number=2, 
     save_path_armijo_base="figs/task1_armijo",
@@ -189,6 +174,6 @@ np.save(npy_save_path, {
     'u': uu_star, 
     't': tt_hor, 
     'J': JJ[:converged_iter+1], 
-    'QQT': QQT
+    'QQT': data.QT_task1
 })
 print(f"\nTask 1 trajectory safely saved to {npy_save_path}")
