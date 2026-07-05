@@ -5,6 +5,7 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+import mpld3
 import cost as cst
 import dynamics as dyn
 import data as cfg
@@ -116,26 +117,26 @@ def select_stepsize(stepsize_0, armijo_maxiters, cc, beta, deltau, xx_ref, uu_re
                   costs[ii_plot] = JJ_temp
 
 
-            plt.figure(1)
-            plt.clf()
+            fig, ax = plt.subplots(figsize=(10, 6))
 
-      
-            plt.plot(steps, costs, color='g', label='$J(\\mathbf{u}^k - \\gamma^k*d^k)$', linewidth = 2)
-            plt.plot(steps, JJ + descent_arm*steps, color='r', label='$J(\\mathbf{u}^k) - \\gamma^k*\\nabla J(\\mathbf{u}^k)^{\\top} d^k$', linewidth = 2)
-            plt.plot(steps, JJ + cc*descent_arm*steps, color='g', linestyle='dashed', label='$J(\\mathbf{u}^k) - c*\\gamma^k\\nabla J(\\mathbf{u}^k)^{\\top} d^k$', linewidth = 2)
+            ax.plot(steps, costs, color='g', label='$J(\\mathbf{u}^k - \\gamma^k*d^k)$', linewidth = 2)
+            ax.plot(steps, JJ + descent_arm*steps, color='r', label='$J(\\mathbf{u}^k) - \\gamma^k*\\nabla J(\\mathbf{u}^k)^{\\top} d^k$', linewidth = 2)
+            ax.plot(steps, JJ + cc*descent_arm*steps, color='g', linestyle='dashed', label='$J(\\mathbf{u}^k) - c*\\gamma^k\\nabla J(\\mathbf{u}^k)^{\\top} d^k$', linewidth = 2)
 
             # plot the tested stepsize
-            plt.scatter(stepsizes, costs_armijo, marker='*', s=100, zorder = 5) 
+            ax.scatter(stepsizes, costs_armijo, marker='*', s=100, zorder = 5) 
 
-            plt.grid()
-            plt.xlabel('$\\gamma^k$')
-            plt.ylabel("$g(\\gamma^k)$")
-            plt.legend()
-            plt.title(f"Armijo rule at iteration k = {kk} | Cost J={JJ:.3e} | Descent={abs(descent_arm):.3e}")
-            plt.tight_layout()
+            ax.grid()
+            ax.set_xlabel('$\\gamma^k$')
+            ax.set_ylabel("$g(\\gamma^k)$")
+            ax.legend()
+            ax.set_title(f"Armijo rule at iteration k = {kk} | Cost J={JJ:.3e} | Descent={abs(descent_arm):.3e}")
+            fig.tight_layout()
 
             if save_path is not None:
                   plt.savefig(save_path)
-            plt.close()
+                  html_path = save_path.replace('.png', '.html')
+                  mpld3.save_html(fig, html_path)
+            plt.close(fig)
 
       return stepsize

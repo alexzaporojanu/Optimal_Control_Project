@@ -1,15 +1,19 @@
 #
-# Optimal control of an Acrobot
-# Semi-Analytical Dynamic script
+# Acrobot — Dynamics and Analytical Linearization Module (CasADi)
+# Optimal Control Project — Parameter Set 3
 #
 
+import casadi as ca
 import numpy as np
-import sympy as sy
 import data
 
-# ==========================================
-# 1. PARAMETERS SETUP
-# ==========================================
+# =============================================================================
+# 1. LOAD PHYSICAL AND TEMPORAL PARAMETERS
+# =============================================================================
+ns = data.ns  # 4 states (theta1, theta2, dtheta1, dtheta2)
+ni = data.ni  # 1 control input (torque tau at elbow)
+dt = data.dt  # 0.01s discretization step
+
 m1, m2 = data.m1, data.m2
 l1, l2 = data.l1, data.l2
 lc1, lc2 = data.lc1, data.lc2
@@ -17,97 +21,97 @@ I1, I2 = data.I1, data.I2
 f1, f2 = data.f1, data.f2
 g_gravity = data.g
 
-dt = data.dt 
-ns = data.ns 
-ni = data.ni 
-
-# ==========================================
-# 2. SYMBOLIC CONTINUOUS DEFINITION
-# ==========================================
-print(" Compiling Symbolic Continuous Dynamics...")
-
-x_sym = sy.Matrix(sy.symbols(f'x0:{ns}'))   
-u_sym = sy.Matrix(sy.symbols(f'u0:{ni}'))   
+# =============================================================================
+# 2. SYMBOLIC CONTINUOUS DYNAMICS (CasADi SX)
+# =============================================================================
+# Symbolic variables (SX represents fast sparse symbolic variables)
+x_sym = ca.SX.sym('x', ns)
+u_sym = ca.SX.sym('u', ni)
 
 th1, th2, dth1, dth2 = x_sym[0], x_sym[1], x_sym[2], x_sym[3]
 tau = u_sym[0]
 
-s1, s2, c2, s12 = sy.sin(th1), sy.sin(th2), sy.cos(th2), sy.sin(th1 + th2)
+s1, s2, c2, s12 = ca.sin(th1), ca.sin(th2), ca.cos(th2), ca.sin(th1 + th2)
 
 # Mass Matrix M(q)
 m11 = I1 + I2 + m1 * lc1**2 + m2 * (l1**2 + lc2**2 + 2 * l1 * lc2 * c2)
 m12 = I2 + m2 * lc2 * (l1 * c2 + lc2)
 m21 = m12
 m22 = I2 + m2 * lc2**2
-M_mat = sy.Matrix([[m11, m12], [m21, m22]])
 
-# Coriolis matrix C(q, dq)
-h_cor = -m2 * l1 * lc2 * s2 
-C_mat = sy.Matrix([
-    [h_cor * dth2, h_cor * (dth1 + dth2)], 
-    [-h_cor * dth1, 0]
-])
+M_mat = ca.SX(2, 2)
+M_mat[0, 0] = m11; M_mat[0, 1] = m12
+M_mat[1, 0] = m21; M_mat[1, 1] = m22
 
-# Gravity G(q)
-G_vec = sy.Matrix([
-    [m1 * lc1 * g_gravity * s1 + m2 * g_gravity * (l1 * s1 + lc2 * s12)], 
-    [m2 * lc2 * g_gravity * s12]
-])
+# Coriolis Matrix C(q, dq)
+h_cor = -m2 * l1 * lc2 * s2
+C_mat = ca.SX(2, 2)
+C_mat[0, 0] = h_cor * dth2;  C_mat[0, 1] = h_cor * (dth1 + dth2)
+C_mat[1, 0] = -h_cor * dth1; C_mat[1, 1] = 0
 
-# Friction matrix F(dq)
-F_mat = sy.Matrix([[f1, 0], [0, f2]])
+# Gravity Vector G(q)
+G_vec = ca.SX(2, 1)
+G_vec[0] = m1 * lc1 * g_gravity * s1 + m2 * g_gravity * (l1 * s1 + lc2 * s12)
+G_vec[1] = m2 * lc2 * g_gravity * s12
 
-# Underactuated Input (Hip only)
-Tau_vec = sy.Matrix([[0], [tau]])
-dq = sy.Matrix([dth1, dth2])
+# Viscous Friction Matrix F(dq)
+F_mat = ca.SX(2, 2)
+F_mat[0, 0] = f1; F_mat[0, 1] = 0
+F_mat[1, 0] = 0;  F_mat[1, 1] = f2
 
-# ddq = M^-1 * (Tau - C*dq - F*dq - G)
-ddq = M_mat.inv() * (Tau_vec - C_mat * dq - F_mat * dq - G_vec)
+# Input and velocity vectors
+Tau_vec = ca.SX(2, 1)
+Tau_vec[0] = 0
+Tau_vec[1] = tau
 
-f_continuous_sym = sy.Matrix([dth1, dth2, ddq[0], ddq[1]])
+dq = ca.SX(2, 1)
+dq[0] = dth1
+dq[1] = dth2
 
-# We only lambdify the continuous dynamics. No RK4 algebraic explosion
-f_continuous_func = sy.lambdify([x_sym, u_sym], f_continuous_sym, 'numpy', cse=True)
+# Compute joint accelerations: ddq = M^-1 * (Tau - C*dq - F*dq - G)
+# Using ca.solve(A, b) is numerically more stable than inv(A) @ b
+rhs = Tau_vec - ca.mtimes(C_mat, dq) - ca.mtimes(F_mat, dq) - G_vec
+ddq = ca.solve(M_mat, rhs)
 
-def continuous_dynamics(xx, uu):
-    """Evaluates the compiled continuous physics."""
-    return f_continuous_func(xx.reshape(ns, 1), uu.reshape(ni, 1)).flatten()
+# Continuous-time state derivative x_dot = f_c(x, u)
+f_continuous_sym = ca.vertcat(dth1, dth2, ddq[0], ddq[1])
 
-# ==========================================
-# 3. NUMERICAL RK4 & JACOBIANS
-# ==========================================
-print(" Dynamics module ready! (Instant compilation achieved)")
+# Create continuous-time dynamics function
+f_continuous_func = ca.Function('f_c', [x_sym, u_sym], [f_continuous_sym])
 
+# =============================================================================
+# 3. SYMBOLIC RK4 INTEGRATOR & ALGORITHMIC DIFFERENTIATION (AD)
+# =============================================================================
+# Define RK4 steps symbolically
+k1 = f_continuous_func(x_sym, u_sym)
+k2 = f_continuous_func(x_sym + 0.5 * dt * k1, u_sym)
+k3 = f_continuous_func(x_sym + 0.5 * dt * k2, u_sym)
+k4 = f_continuous_func(x_sym + dt * k3, u_sym)
+
+# Next state symbolic expression x_next
+x_next_sym = x_sym + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
+step_func  = ca.Function('step_func', [x_sym, u_sym], [x_next_sym])
+
+# Compute exact analytical Jacobians via Algorithmic Differentiation (AD)
+A_d_sym = ca.jacobian(x_next_sym, x_sym)  # Discrete-time state Jacobian A_d (4x4)
+B_d_sym = ca.jacobian(x_next_sym, u_sym)  # Discrete-time input Jacobian B_d (4x1)
+
+# Combined function evaluating step and exact Jacobians in a single call
+dynamics_func = ca.Function('dynamics', [x_sym, u_sym], [x_next_sym, A_d_sym, B_d_sym])
+
+# =============================================================================
+# 4. PUBLIC API INTERFACE (NumPy Compatible)
+# =============================================================================
 def step(xx, uu):
-    """Numerical RK4 using the compiled continuous dynamics."""
-    xx = np.array(xx, dtype=float).flatten()
-    uu = np.array(uu, dtype=float).flatten()
-    
-    k1 = continuous_dynamics(xx, uu)
-    k2 = continuous_dynamics(xx + 0.5 * dt * k1, uu)
-    k3 = continuous_dynamics(xx + 0.5 * dt * k2, uu)
-    k4 = continuous_dynamics(xx + dt * k3, uu)
-    
-    return xx + (dt / 6.0) * (k1 + 2*k2 + 2*k3 + k4)
+    """Computes next state by evaluating the symbolic RK4 step."""
+    return np.array(step_func(xx, uu)).flatten()
 
 def dynamics(xx, uu):
     """
-    Returns the next state and the Jacobians evaluated via rapid finite differences.
-    Because `step` calls a lambdified C-level function, this takes microseconds.
+    Returns the next state and the exact discrete Jacobians (A_d, B_d)
+    computed via Algorithmic Differentiation.
     """
-    xxp = step(xx, uu)
-    eps = 1e-5
-
-    A_d = np.zeros((ns, ns))
-    for i in range(ns):
-        x_plus = xx.copy(); x_plus[i] += eps
-        x_minus = xx.copy(); x_minus[i] -= eps
-        A_d[:, i] = (step(x_plus, uu) - step(x_minus, uu)) / (2 * eps)
-
-    B_d = np.zeros((ns, ni))
-    for i in range(ni):
-        u_plus = uu.copy(); u_plus[i] += eps
-        u_minus = uu.copy(); u_minus[i] -= eps
-        B_d[:, i] = (step(xx, u_plus) - step(xx, u_minus)) / (2 * eps)
-
-    return xxp, A_d, B_d
+    xxp, A_d, B_d = dynamics_func(xx, uu)
+    
+    # Convert to NumPy arrays for compatibility with external scripts
+    return np.array(xxp).flatten(), np.array(A_d), np.array(B_d)

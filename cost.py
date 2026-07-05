@@ -1,44 +1,7 @@
 #
-# Acrobot — Funzioni di Costo
-# Progetto Optimal Control — Parameter Set 3
+# Acrobot — Cost Functions
+# Optimal Control Project — Parameter Set 3
 #
-# Riferimento teorico:
-#   [Slide 06] Optimal Control Shooting  — sezione "Cost Function"
-#   [Slide 07] Gradient Method           — sezione "Stage and Terminal Cost"
-#   [Session4/1_cost.py]                 — pattern del professore
-#
-# FORMULAZIONE DEL COSTO
-# ======================
-# Il problema di ottimo minimizza il costo totale:
-#
-#   J(x₀, u) = Σ_{t=0}^{T-1} l(x_t, u_t) + l_T(x_T)
-#
-# con costo di stadio quadratico:
-#   l(x, u)  = ½ (x - x_ref)ᵀ Q  (x - x_ref) + ½ (u - u_ref)ᵀ R  (u - u_ref)
-#
-# e costo terminale:
-#   l_T(x_T) = ½ (x_T - x_ref_T)ᵀ Q_T (x_T - x_ref_T)
-#
-# SCELTA DEI PESI
-# ===============
-# La scelta dei pesi Q, R, Q_T riflette le priorità del task:
-#
-#   Q  (stage): pesi BASSI → il robot può muoversi liberamente per immagazzinare
-#               energia durante lo swing-up (non vogliamo penalizzare troppo
-#               le traiettorie "intermedie" necessarie per raggiungere l'alto)
-#
-#   R  (input): peso BASSO → incoraggia l'uso della coppia. Non zero per evitare
-#               la singolarità di Q_uu nel backward pass (essenziale per iDDP)
-#
-#   Q_T (term): pesi MOLTO ALTI → impone il vincolo di raggiungere il target
-#               a fine orizzonte. È il "pull" che porta il robot in posizione eretta.
-#               Nota: Q_T verrà SOVRASCRITTO dalla soluzione DARE nel main
-#               per una stima teoricamente fondata del costo infinito-orizzonte.
-#
-
-# MATRICI DI PESO — Stage Cost
-# [Rif.: Session4/1_cost.py — pattern identico QQt, RRt]
-# [Rif.: Session4/10_main_gradient_optcon_method.py — righe 83-88]
 
 import numpy as np
 import data as dt
@@ -48,8 +11,8 @@ ni = dt.ni
 
 def stagecost(xx, uu, xx_ref, uu_ref, Q, R):
     """
-    Calcola il costo di stadio quadratico e i suoi gradienti.
-    Riceve dinamicamente le matrici Q e R definite in config.py
+    Computes the quadratic stage cost and its gradients.
+    Dynamically receives matrices Q and R defined in data.py
     """
     xx     = xx.reshape(ns, 1)
     uu     = uu.reshape(ni, 1)
@@ -68,8 +31,8 @@ def stagecost(xx, uu, xx_ref, uu_ref, Q, R):
 
 def termcost(xT, xT_ref, QT):
     """
-    Calcola il costo terminale quadratico e il suo gradiente.
-    Riceve dinamicamente la matrice QT (spesso calcolata dalla DARE)
+    Computes the quadratic terminal cost and its gradient.
+    Dynamically receives matrix QT (often computed from DARE)
     """
     xT     = xT.reshape(ns, 1)
     xT_ref = xT_ref.reshape(ns, 1)

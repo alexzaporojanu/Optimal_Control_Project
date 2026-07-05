@@ -2,13 +2,17 @@
 # Optimal control of an Acrobot
 # Task 0: Free Fall / Passive Dynamics Sanity Check
 #
+# Technical Context:
+#   Validates the physical correctness of the Euler-Lagrange equations
+#   integrated via a 4th-order Runge-Kutta (RK4) scheme. The state vector is
+#   defined in configuration space as x = [q^T, dq^T]^T in R^4, where q = [theta1, theta2]^T.
+#
 
 import numpy as np
 import matplotlib.pyplot as plt
 import os
 import dynamics as dyn
 import data
-import animation as an
 
 print("=" * 60)
 print("   Task 0: Passive Dynamics Sanity Check (Free Fall)")
@@ -16,26 +20,26 @@ print("=" * 60)
 
 # Create output directories if they don't exist
 os.makedirs('data', exist_ok=True)
-os.makedirs('figs', exist_ok=True)
 
 # 1. SIMULATION PARAMETERS
-tf = 30.0                          # Simulate for 10 seconds
-TT = int(tf / data.dt)             # Number of time steps
-tt_hor = np.linspace(0, tf, TT)    # Time vector
+tf = 10.0                          # Time horizon in seconds
+TT = int(tf / data.dt)             # Discrete steps based on RK4 step dt
+tt_hor = np.linspace(0, tf, TT)    # Time grid
 
 # 2. INITIALIZATION
+# State trajectory xx is propagated passively. Input uu is set to zero (passive dynamics).
 xx = np.zeros((data.ns, TT))       # State trajectory array
-uu = np.zeros((data.ni, TT))       # Input trajectory array (All zeros!)
+uu = np.zeros((data.ni, TT))       # Control input trajectory (zero torque)
 
-# Set initial state: Let's drop it from exactly horizontal (90 degrees)
-# [theta1, theta2, omega1, omega2]
+# Set initial state: drop the robot from a horizontal position
+# x0 = [theta1, theta2, omega1, omega2]^T
 x0 = np.array([np.pi/2, 0.0, 0.0, 0.0])
 xx[:, 0] = x0
 
 # 3. FORWARD SIMULATION
+# Open-loop simulation of passive dynamics using RK4 integration.
 print("Simulating forward (0 torque applied)...")
 for t in range(TT - 1):
-    # Pass the current state and zero-torque input to the dynamics step
     xx[:, t+1] = dyn.step(xx[:, t], uu[:, t])
 
 print("Simulation complete! Generating plots...")
@@ -59,11 +63,8 @@ for i in range(data.ns):
 
 axs[-1].set_xlabel('Time [s]')
 plt.tight_layout()
-plt.savefig('figs/task0_passive_dynamics.png', dpi=300)
 
-# =============================================================================
 # 5. STANDARDIZED TRAJECTORY SAVING
-# =============================================================================
 npy_save_path = 'data/optimal_trajectory_task0.npy'
 np.save(npy_save_path, {
     'x': xx, 
@@ -72,8 +73,5 @@ np.save(npy_save_path, {
 })
 print(f"\nTask 0 trajectory safely saved to '{npy_save_path}'")
 
-# Block=False so we can proceed to animation
-plt.show(block=False)
-
-print("\nGenerating animation...")
-an.animate_trajectory(tt_hor, xx, title="Task 0: Passive Dynamics (Free Fall)")
+# Block=True ensures the window stays open until manually closed
+plt.show(block=True)

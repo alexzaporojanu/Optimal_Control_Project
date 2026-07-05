@@ -1,41 +1,6 @@
 #
 # Task 3 — Trajectory Tracking via TV-LQR (Time-Varying LQR)
-#
-# Progetto Optimal Control — Parameter Set 3
-# Autori: [inserire nomi]  — UniBO 2025/26
-#
-# Riferimento teorico:
-#   [Slide 10] Optimal Control Based Tracking — sezione "TV-LQR Design"
-#   [Slide 04] LQ Optimal Control             — sezione "Discrete Riccati Eq."
-#   [Session5/3_main_dlqr_tracking.py]        — struttura main identica
-#   [Session5/4_solver_ltv_LQR.py]            — backward Riccati (adattato)
-#
-# STRATEGIA DI TRACKING (Linearizzazione + LQR)
-# ==============================================
-# Data la traiettoria ottima (x*, u*) calcolata in Task 2,
-# si linearizza il sistema Acrobot lungo di essa:
-#
-#   x_{t+1} = F(x*_t, u*_t) + A_t (x_t - x*_t) + B_t (u_t - u*_t)
-#
-# Definendo l'errore: δx_t = x_t - x*_t,  δu_t = u_t - u*_t
-# si ottiene il sistema LTV (Linearizzato Tempo-Variante):
-#
-#   δx_{t+1} = A_t δx_t + B_t δu_t
-#
-# Il problema di ottimo per l'errore è il classico TV-LQR:
-#   min Σ δx_t^T Q δx_t + δu_t^T R δu_t + δx_T^T Q_T δx_T
-#
-# Soluzione: Backward Riccati Equation (FORM 1 — stabile numericamente)
-#   S_t = R + B_t^T P_{t+1} B_t
-#   K_t = S_t^{-1} B_t^T P_{t+1} A_t
-#   P_t = Q + A_t^T P_{t+1} (A_t - B_t K_t)
-#
-# Legge di controllo:
-#   u_t = u*_t - K_t (x_t - x*_t)
-#
-# ROBUSTEZZA: il TV-LQR è testato con MULTIPLE condizioni iniziali perturbate
-# per mostrare il bacino di attrazione del controllore.
-# [Rif.: Session5/3_main_dlqr_tracking.py]
+# Optimal Control Project — Parameter Set 3
 #
 
 import numpy as np
@@ -46,11 +11,11 @@ signal.signal(signal.SIGINT, signal.SIG_DFL)
 plt.rcParams.update({'font.size': 13})
 
 from dynamics        import dynamics, step
-from solver_ltv_lqr  import backward_riccati   # [NUOVO] — modulo dedicato
+from solver_ltv_lqr  import backward_riccati   
 import animation as an
 
 # =============================================================================
-# SEZIONE 1 — CONFIGURAZIONE
+# SECTION 1 — CONFIGURATION
 # =============================================================================
 print("=" * 60)
 print("   Task 3: Trajectory Tracking — TV-LQR")
@@ -58,30 +23,29 @@ print("=" * 60)
 
 ns, ni = 4, 1
 
-# Pesi TV-LQR
-# [Rif.: Session5/3_main_dlqr_tracking.py — QQ e QQ_f (da DARE)]
-Q_lqr = np.diag([1000.0, 1000.0, 100.0, 100.0])   # peso stato (stage)
-R_lqr = np.eye(ni) * 0.1                             # peso ingresso
+# TV-LQR Weights
+Q_lqr = np.diag([1000.0, 1000.0, 100.0, 100.0])   # state weight (stage)
+R_lqr = np.eye(ni) * 0.1                             # input weight
 
 # =============================================================================
-# SEZIONE 2 — CARICAMENTO TRAIETTORIA DI RIFERIMENTO
+# SECTION 2 — REFERENCE TRAJECTORY LOADING
 # =============================================================================
-print("\nCaricamento traiettoria di riferimento (Task 2)...")
+print("\nLoading reference trajectory (Task 2)...")
 try:
     data_dict         = np.load('data/optimal_trajectory_task2.npy', allow_pickle=True).item()
-    x_ref_raw    = data_dict['x']    # (4, TT) o (TT, 4) — gestiamo entrambi
-    u_ref_raw    = data_dict['u']    # (1, TT) o (TT, 1)
+    x_ref_raw    = data_dict['x']    # (4, TT) or (TT, 4) — handle both
+    u_ref_raw    = data_dict['u']    # (1, TT) or (TT, 1)
     t_axis       = data_dict['t']    # (TT,)
-    QQT_dare     = data_dict.get('QQT', None)   # DARE matrix (se salvata da Task 2)
+    QQT_dare     = data_dict.get('QQT', None)   # DARE matrix (if saved from Task 2)
 
-    # ---- FIX ROBUSTO DIMENSIONI ----
+    # ---- ROBUST DIMENSION FIX ----
     if x_ref_raw.ndim == 3:
-        x_ref_raw = x_ref_raw[:,:,-1]    # Prende ultima iterazione se 3D
+        x_ref_raw = x_ref_raw[:,:,-1]    # Take last iteration if 3D
     if x_ref_raw.shape[0] == ns and x_ref_raw.shape[1] != ns:
         x_ref_traj = x_ref_raw.T         # (TT, 4)
         u_ref_traj = u_ref_raw.T if u_ref_raw.shape[0] == ni else u_ref_raw
     else:
-        x_ref_traj = x_ref_raw           # già (TT, 4)
+        x_ref_traj = x_ref_raw           # already (TT, 4)
         u_ref_traj = u_ref_raw
 
     if u_ref_traj.ndim == 1:
@@ -90,22 +54,22 @@ try:
     steps = x_ref_traj.shape[0]
 
     if x_ref_traj.shape[1] != 4:
-        raise ValueError(f"x_ref ha shape {x_ref_traj.shape}, atteso (TT, 4)")
+        raise ValueError(f"x_ref has shape {x_ref_traj.shape}, expected (TT, 4)")
 
-    print(f"  Traiettoria caricata: {steps} passi,  T = {t_axis[-1]:.1f}s")
+    print(f"  Trajectory loaded: {steps} steps,  T = {t_axis[-1]:.1f}s")
 
 except FileNotFoundError:
-    print("ERRORE: 'optimal_trajectory_task2.npy' non trovato.")
-    print("Esegui prima task2_main.py")
+    print("ERROR: 'optimal_trajectory_task2.npy' not found.")
+    print("Please run task2_main.py first.")
     exit()
 except Exception as e:
-    print(f"ERRORE nel caricamento: {e}")
+    print(f"Error in loading: {e}")
     exit()
 
 # =============================================================================
-# SEZIONE 3 — LINEARIZZAZIONE LUNGO LA TRAIETTORIA DI RIFERIMENTO
+# SECTION 3 — LINEARIZATION ALONG REFERENCE TRAJECTORY
 # =============================================================================
-print("\nLinearizzazione del sistema lungo la traiettoria di riferimento...")
+print("\nLinearizing the system along reference trajectory...")
 A_list, B_list = [], []
 for t in range(steps):
     x_t = x_ref_traj[t]
@@ -113,35 +77,35 @@ for t in range(steps):
     _, A, B = dynamics(x_t, u_t)
     A_list.append(A)
     B_list.append(B)
-print(f"  Linearizzazione completata: {steps} coppie (A_t, B_t)")
+print(f"  Linearization complete: {steps} pairs (A_t, B_t)")
 
 # =============================================================================
-# SEZIONE 4 — BACKWARD RICCATI (TV-LQR Design)
+# SECTION 4 — BACKWARD RICCATI (TV-LQR Design)
 # =============================================================================
 if QQT_dare is not None:
     QQf = QQT_dare
-    print("\nUsando Q_T dalla DARE (caricata da Task 2).")
+    print("\nUsing Q_T from DARE (loaded from Task 2).")
 else:
     QQf = Q_lqr
-    print("\nUsando Q_T = Q_lqr (DARE non disponibile).")
+    print("\nUsing Q_T = Q_lqr (DARE not available).")
 
-print("Calcolo Riccati backward (TV-LQR)...")
+print("Computing Riccati backward (TV-LQR)...")
 K_gains, P_list = backward_riccati(A_list, B_list, Q_lqr, R_lqr, QQf, steps)
-print(f"  Backward Riccati completato.")
+print(f"  Backward Riccati complete.")
 print(f"  K_gains[0] = {K_gains[0].round(3)}")
 
 # =============================================================================
-# SEZIONE 5 — SIMULAZIONE TRACKING con MULTIPLE PERTURBAZIONI
+# SECTION 5 — TRACKING SIMULATION WITH MULTIPLE PERTURBATIONS
 # =============================================================================
 perturbations = {
-    'Pert. spalla -0.2 rad': np.array([-0.2,  0.0, 0.0, 0.0]),
-    'Pert. gomito +0.3 rad': np.array([ 0.0,  0.3, 0.0, 0.0]),
-    'Pert. vel. spalla'    : np.array([ 0.0,  0.0, 0.3, 0.0]),
+    'Pert. shoulder -0.2 rad': np.array([-0.2,  0.0, 0.0, 0.0]),
+    'Pert. elbow +0.3 rad': np.array([ 0.0,  0.3, 0.0, 0.0]),
+    'Pert. vel. shoulder'    : np.array([ 0.0,  0.0, 0.3, 0.0]),
 }
 
 results = {}
 
-print("\nSimulazione tracking LQR con perturbazioni multiple...")
+print("\nSimulating LQR tracking with multiple perturbations...")
 
 for label, pert in perturbations.items():
     x_sim = np.zeros((steps + 1, ns))
@@ -158,11 +122,11 @@ for label, pert in perturbations.items():
         x_sim[t+1] = step(x_sim[t], u_curr.flatten())
 
     err_final = np.linalg.norm(x_sim[-2] - x_ref_traj[-1])
-    print(f"  [{label}]: errore finale ||x_T - x*_T|| = {err_final:.4e}")
+    print(f"  [{label}]: final error ||x_T - x*_T|| = {err_final:.4e}")
     results[label] = {'x_sim': x_sim, 'u_sim': u_sim}
 
 # =============================================================================
-# SEZIONE 6 — PLOT RISULTATI (Richiesta Assignment)
+# SECTION 6 — PLOT RESULTS
 # =============================================================================
 
 def plot_results_task3(time, xx_ref, uu_ref, xx_sim, uu_sim, label_name, pert_idx):
@@ -283,19 +247,17 @@ import os
 os.makedirs('figs', exist_ok=True)
 
 for i, (label, res) in enumerate(results.items()):
-    # In task3_main.py, u_sim has shape (steps, ni) and x_sim (steps+1, ns). 
-    # To plot we need them the same length as t_axis.
     x_sim_plot = res['x_sim'][:-1, :]
     u_sim_plot = res['u_sim']
     plot_results_task3(t_axis, x_ref_traj, u_ref_traj, x_sim_plot, u_sim_plot, label, i+1)
     
     # Animate the trajectory vs the reference
-    print(f"\nAvvio animazione per: {label}")
-    # Traspone gli array per l'animazione (4, T)
+    print(f"\nStarting animation for: {label}")
+    # Transpose arrays for animation (4, T)
     an.animate_trajectory(t_axis, x_sim_plot.T, x_ref_traj.T, title=f"Task 3 LQR Tracking: {label}")
 
 # =============================================================================
-# SEZIONE 7 — SALVATAGGIO
+# SECTION 7 — SAVE DATA
 # =============================================================================
 np.save('data/lqr_data_task3.npy', {
     'K_gains': K_gains,
@@ -304,4 +266,4 @@ np.save('data/lqr_data_task3.npy', {
     'R_lqr'  : R_lqr,
     'QQf'    : QQf
 })
-print("\nGuadagni LQR e Riccati P_t salvati in 'lqr_data_task3.npy'")
+print("\nLQR gains and Riccati matrices P_t saved to 'lqr_data_task3.npy'")

@@ -13,7 +13,7 @@ import armijo as arm
 import data as cfg
 import control as ctrl
 
-def newton_method(xx, uu, xx_ref, uu_ref, x0, max_iters, Qt, Rt, QT,
+def newton_method(xx, uu, xx_ref, uu_ref, x0, max_iters, task_number, QQT=None,
                   armijo_plot=True, armijo_plot_number=2, save_path_armijo_base=None):
     """
     Regularized Newton's method for optimal control of an Acrobot.
@@ -51,7 +51,14 @@ def newton_method(xx, uu, xx_ref, uu_ref, x0, max_iters, Qt, Rt, QT,
     stepsize_0 = cfg.armijo_stepsize0         
     term_cond = cfg.term_cond
 
-    # The cost matrices are now passed directly as arguments (Qt, Rt, QT)
+    # Import the cost matrices 
+    if task_number == 1:
+        Qt, Rt, QT = cfg.Q_task1, cfg.R_task1, cfg.QT_task1
+    elif task_number == 2:
+        Qt, Rt, QT = cfg.Q_task2, cfg.R_task2, cfg.QT_task2
+    else: 
+        print("\n\n\nInvalid task number, stopping the algorithm...")
+        quit()
 
 
     # Linearization
@@ -120,8 +127,9 @@ def newton_method(xx, uu, xx_ref, uu_ref, x0, max_iters, Qt, Rt, QT,
         deltax[:,:,kk], deltau[:,:,kk], KK, sigma, _ = lqr.ltv_LQR_affine(A, B, Qtilda, Rtilda, Stilda, QTilda, TT, xx0, q, r, qT.squeeze())
 
         for tt in reversed(range(TT-1)): 
-            descent[kk] += abs(dJ[:,tt,kk].T @ deltau[:,tt,kk])
             descent_arm[kk] += dJ[:,tt,kk].T @ deltau[:,tt,kk] 
+
+        descent[kk] = abs(descent_arm[kk])
 
         # Determine armijo save path if plotting is enabled
         save_path = f"{save_path_armijo_base}_{kk}.png" if save_path_armijo_base and armijo_plot and (kk < 1 or kk%10 == 0 or kk==armijo_plot_number or kk==7) else None

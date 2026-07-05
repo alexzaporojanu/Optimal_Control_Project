@@ -2,6 +2,13 @@
 # Optimal control of an Acrobot
 # Animation Script
 #
+# Technical Context:
+#   Implements the forward kinematics model to project joint angles (theta1, theta2)
+#   to 2D Cartesian coordinate coordinates (x, y) for both links:
+#     Link 1: (l1*sin(theta1), -l1*cos(theta1))
+#     Link 2: (x1 + l2*sin(theta1+theta2), y1 - l2*cos(theta1+theta2))
+#   This allows visual verification of control performance and swing-up behaviors.
+#
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -34,11 +41,13 @@ def animate_trajectory(tt, xx, xx_ref=None, title="Acrobot Optimal Trajectory"):
     l1 = data.l1
     l2 = data.l2
 
+    # Forward Kinematics projection for Link 1 and Link 2
     x1 = l1 * np.sin(th1)
     y1 = -l1 * np.cos(th1)
     x2 = x1 + l2 * np.sin(th1 + th2)
     y2 = y1 - l2 * np.cos(th1 + th2)
 
+    # Reference kinematics for ghost trace visualization
     if xx_ref is not None:
         x1_ref = l1 * np.sin(th1_ref)
         y1_ref = -l1 * np.cos(th1_ref)
@@ -149,7 +158,7 @@ if __name__ == "__main__":
     xx = traj_data['x']  # State trajectory
     tt = traj_data['t']  # Time vector
     
-    # Handle the fact that some tasks might save as (TT, 4) instead of (4, TT)
+    # Handle dimension mismatches (TT, 4) vs (4, TT)
     if xx.shape[0] != 4:
         xx = xx.T
 

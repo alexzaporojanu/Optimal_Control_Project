@@ -7,13 +7,19 @@ import signal
 signal.signal(signal.SIGINT, signal.SIG_DFL)
 plt.rcParams.update({'font.size': 12})
 
-# Import the unified physical and algorithmic parameters
 import data                 
 import dynamics as dyn
 import reference_trajectory as ref_gen
 import solver_newton
+import cost as cst
+import armijo
 
-# =============================================================================
+# Try to load the control library to solve the Discrete Algebraic Riccati Equation (DARE)
+try:
+    import control as ctrl
+    HAS_CONTROL = True
+except ImportError:
+    HAS_CONTROL = False
 
 # =============================================================================
 # SECTION 1 — CONFIGURATION & INITIALIZATION
@@ -29,11 +35,10 @@ os.makedirs('figs', exist_ok=True)
 # =============================================================================
 # SECTION 2 — EXTRACT PARAMETERS FROM DATA.PY
 # =============================================================================
-# Extract cost matrices specifically tuned for Task 2
 Q_task = data.Q_task2
 R_task = data.R_task2
 
-# Load the start (downward) and goal (upward) states. Both have shape (4,)
+# Load start (downward) and goal (upward) target equilibria.
 try:
     eq_data = np.load('data/equilibrium_data.npy', allow_pickle=True).item()
     x_start = eq_data['x_eq1']
@@ -45,45 +50,48 @@ except FileNotFoundError:
     x_goal  = np.array([np.pi, 0.0, 0.0, 0.0])
     u_goal  = np.array([0.0])
 
-# Task 2 specific structure: Wait for 5s, Move for 10s, Hold for 5s
+# 3-phase temporal partition: Pre-wait, Move, Post-hold.
+# Helps the solver absorb initial transients and stabilize the terminal state.
 t_pre, t_move, t_post = 5.0, 10.0, 5.0
 
-# Generate a 3-phase quintic smooth reference.
-# xx_ref shape: (4, TT)
-# uu_ref shape: (1, TT)
+# Generate a smooth C^2 continuous reference trajectory via a quintic polynomial.
+# Quintic Hermite interpolation ensures zero velocity and acceleration at start/end.
 xx_ref, uu_ref, TT, tf, N_pre, N_move = ref_gen.generate_extended(
     data.dt, x_start, x_goal, t_pre=t_pre, t_move=t_move, t_post=t_post
 )
 tt_hor = np.linspace(0, tf, TT)
 
-# Use the terminal cost matrix QT defined in data.py
-QQT = data.QT_task2
+# Terminal cost matrix QQT computation (DARE infinite-horizon cost-to-go approximation)
+if HAS_CONTROL:
+    _, A_eq, B_eq = dyn.dynamics(x_goal, u_goal)
+    QQT = ctrl.dare(A_eq, B_eq, Q_task, R_task)[0]
+else:
+    QQT = data.QT_task2
 
 # =============================================================================
 # SECTION 3 — INITIAL GUESS (WARM START)
 # =============================================================================
-# Initialize arrays to store trajectories across all iterations
-# Initialize arrays to store trajectories across all iterations
 xx = np.zeros((data.ns, TT, data.max_iters_task2 + 1))
 uu = np.zeros((data.ni, TT, data.max_iters_task2 + 1))
 
-# Set starting state for iteration 0
+# Set initial state for iteration 0
 xx[:, 0, 0] = x_start
 
 # WARM START KICK:
-# Unlike Task 1's step reference, Task 2's gentle quintic reference creates very 
-# weak initial gradients. The solver absolutely needs this initial hint of kinetic 
-# energy during the "move" phase to escape the downward local minimum!
+# A smooth quintic trajectory starting at rest produces zero initial gradients.
+# To break the local minimum at the downward equilibrium, we inject an oscillatory
+# warm-start torque profile to feed kinetic energy into the elbow joint.
 t_kick_local = np.linspace(0, t_move, N_move)
 uu[0, N_pre:N_pre + N_move, 0] = 5.0 * np.sin(3.0 * t_kick_local)
 
-# Forward simulate the initial guess trajectory
+# Forward pass rollout for iteration 0 (open-loop simulation of the warm start)
 for t in range(TT - 1):
     xx[:, t+1, 0] = dyn.step(xx[:, t, 0], uu[:, t, 0])
 
 # =============================================================================
-# SECTION 4 — MAIN LOOP (Newton / LTV-LQR)
+# SECTION 4 — MAIN OPTIMIZATION LOOP
 # =============================================================================
+# Solves the optimal transition task using regularized closed-loop Newton's method (SLQ).
 print("\n" + "-"*50)
 print("Starting Newton / LTV-LQR optimization (Task 2)...")
 print("-"*50)
@@ -95,9 +103,7 @@ xx, uu, descent, descent_arm, JJ, converged_iter = solver_newton.newton_method(
     uu_ref=uu_ref, 
     x0=x_start, 
     max_iters=data.max_iters_task2, 
-    Qt=Q_task, 
-    Rt=R_task, 
-    QT=data.QT_task2, 
+    task_number=2, 
     armijo_plot=True, 
     armijo_plot_number=2, 
     save_path_armijo_base="figs/task2_armijo"
@@ -120,6 +126,7 @@ axs_conv[0].set_ylabel('Cost $J$ (log)', fontsize=12)
 axs_conv[0].grid(alpha=0.4)
 axs_conv[0].legend()
 
+# Descent direction metrics plotted on a logarithmic scale to verify quadratic/linear convergence properties.
 axs_conv[1].semilogy(iters_ran, descent[:converged_iter+1], 's--', color='red', lw=2, label=r'Step Norm $\|\|\Delta u\|\|^2$')
 axs_conv[1].semilogy(iters_ran, np.abs(descent_arm[:converged_iter+1]), '^-', color='green', lw=2, label=r'Expected Descent $|dJ|$')
 axs_conv[1].axhline(data.term_cond, color='black', ls=':', label=f'Threshold ({data.term_cond:.0e})')
@@ -143,7 +150,7 @@ for i in range(data.ns):
     axs_opt[i].plot(tt_hor, xx_star[i,:], color=state_colors[i], lw=2, label='Optimal')
     axs_opt[i].plot(tt_hor, xx_ref[i,:TT], color='black', lw=1.5, ls='--', label='Reference')
     
-    # Draw vertical lines to mark the 3 distinct movement phases
+    # Demarcate pre-wait, move, and post-hold phases physically
     axs_opt[i].axvline(t_pre, color='gray', ls=':', alpha=0.6)
     axs_opt[i].axvline(t_pre+t_move, color='gray', ls=':', alpha=0.6)
     
