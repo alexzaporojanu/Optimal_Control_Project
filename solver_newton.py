@@ -13,7 +13,7 @@ import armijo as arm
 import data as cfg
 import control as ctrl
 
-def newton_method(xx, uu, xx_ref, uu_ref, x0, max_iters, task_number, QQT=None,
+def newton_method(xx, uu, xx_ref, uu_ref, x0, max_iters, Qt, Rt, QT,
                   armijo_plot=True, armijo_plot_number=2, save_path_armijo_base=None):
     """
     Regularized Newton's method for optimal control of an Acrobot.
@@ -26,7 +26,9 @@ def newton_method(xx, uu, xx_ref, uu_ref, x0, max_iters, task_number, QQT=None,
     uu_ref : array, shape (ni, TT)                 Reference curve inputs.
     x0 : array, shape (ns,)                        Initial condition.
     max_iters : int                                Maximum number of iterations.
-    task_number : int                              Task number, either 1 or 2.
+    Qt : array, shape (ns, ns)                     Stage cost weight for states.
+    Rt : array, shape (ni, ni)                     Stage cost weight for inputs.
+    QT : array, shape (ns, ns)                     Terminal cost weight.
     armijo_plot : bool, optional                   Flag to plot Armijo rule
     armijo_plot_number : int, optional             Number of iterations to plot Armijo rule
     save_path_armijo_base : str, optional          Base path for saving Armijo plots.
@@ -50,15 +52,6 @@ def newton_method(xx, uu, xx_ref, uu_ref, x0, max_iters, task_number, QQT=None,
     armijo_maxiters = cfg.armijo_maxiters   
     stepsize_0 = cfg.armijo_stepsize0         
     term_cond = cfg.term_cond
-
-    # Import the cost matrices 
-    if task_number == 1:
-        Qt, Rt, QT = cfg.Q_task1, cfg.R_task1, cfg.QT_task1
-    elif task_number == 2:
-        Qt, Rt, QT = cfg.Q_task2, cfg.R_task2, cfg.QT_task2
-    else: 
-        print("\n\n\nInvalid task number, stopping the algorithm...")
-        quit()
 
 
     # Linearization

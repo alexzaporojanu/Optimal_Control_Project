@@ -40,14 +40,18 @@ m21 = m12
 m22 = I2 + m2 * lc2**2
 
 M_mat = ca.SX(2, 2)
-M_mat[0, 0] = m11; M_mat[0, 1] = m12
-M_mat[1, 0] = m21; M_mat[1, 1] = m22
+M_mat[0, 0] = m11
+M_mat[0, 1] = m12
+M_mat[1, 0] = m21
+M_mat[1, 1] = m22
 
 # Coriolis Matrix C(q, dq)
 h_cor = -m2 * l1 * lc2 * s2
 C_mat = ca.SX(2, 2)
-C_mat[0, 0] = h_cor * dth2;  C_mat[0, 1] = h_cor * (dth1 + dth2)
-C_mat[1, 0] = -h_cor * dth1; C_mat[1, 1] = 0
+C_mat[0, 0] = h_cor * dth2
+C_mat[0, 1] = h_cor * (dth1 + dth2)
+C_mat[1, 0] = -h_cor * dth1
+C_mat[1, 1] = 0
 
 # Gravity Vector G(q)
 G_vec = ca.SX(2, 1)
@@ -56,8 +60,10 @@ G_vec[1] = m2 * lc2 * g_gravity * s12
 
 # Viscous Friction Matrix F(dq)
 F_mat = ca.SX(2, 2)
-F_mat[0, 0] = f1; F_mat[0, 1] = 0
-F_mat[1, 0] = 0;  F_mat[1, 1] = f2
+F_mat[0, 0] = f1
+F_mat[0, 1] = 0
+F_mat[1, 0] = 0
+F_mat[1, 1] = f2
 
 # Input and velocity vectors
 Tau_vec = ca.SX(2, 1)

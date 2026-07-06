@@ -11,13 +11,9 @@ import data
 import dynamics as dyn
 import reference_trajectory as ref_gen
 import solver_newton
+from equilibrium_finding import find_equilibrium
 
-# Try to load the control library to solve the Discrete Algebraic Riccati Equation (DARE)
-try:
-    import control as ctrl
-    HAS_CONTROL = True
-except ImportError:
-    HAS_CONTROL = False
+import control as ctrl
 
 # CONFIGURATION & INITIALIZATION
 print("=" * 60)
@@ -29,9 +25,9 @@ os.makedirs('data', exist_ok=True)
 os.makedirs('figs', exist_ok=True)
 
 # Problem Dimensions:
-# ns = 4 (state space), ni = 1 (input space). time step dt = 0.01s.
-tf = 10.0           
-TT = int(tf / data.dt)   # Total number of time steps (1000 steps)
+# ns = data.ns (state space), ni = data.ni (input space). time step dt = 0.01s.
+tf = 30.0           
+TT = int(tf / data.dt)   # Total number of time steps (3000 steps)
 
 
 # EXTRACT PARAMETERS FROM DATA.PY
@@ -39,33 +35,20 @@ TT = int(tf / data.dt)   # Total number of time steps (1000 steps)
 Q_task = data.Q_task1
 R_task = data.R_task1
 
-# Load start (downward) and goal (upward) target equilibria.
-try:
-    eq_data = np.load('data/equilibrium_data.npy', allow_pickle=True).item()
-    x_start = eq_data['x_eq1']   
-    x_goal  = eq_data['x_eq2'] 
-    x_start = np.array([0.0, 0.0, 0.0, 0.0]) 
-    x_goal = np.array([0.0, 0.5, 0.0, 0.0])  #equilibrio gomito a circa 28 gradi
-    u_goal  = eq_data['u_eq2']
-except FileNotFoundError:
-    print("\nWARNING: 'data/equilibrium_data.npy' not found. Defaulting to standard equilibria.")
-    x_start = np.zeros(data.ns)
-    x_goal  = np.array([np.pi, 0.0, 0.0, 0.0])
-    u_goal  = np.array([0.0])
+# Solve for exact start and goal equilibria dynamically
+print("Computing exact system equilibria based on physical parameters...")
+x_start, u_start = find_equilibrium(data.theta2_eq1, data.inverted_eq1, label="Equilibrium 1 (Start)")
+x_goal, u_goal   = find_equilibrium(data.theta2_eq2, data.inverted_eq2, label="Equilibrium 2 (Goal)")
 
 # Generate a discontinuous step reference. 
 # Creates a pure transition boundary at T/2 that Newton's method must optimize.
-xx_ref, uu_ref = ref_gen.generate_step(tf, data.dt, x_start, x_goal)
+xx_ref, uu_ref = ref_gen.generate_step(tf, data.dt, x_start, x_goal, u_start, u_goal)
 
 # Terminal cost matrix QQT computation (Shape: 4x4)
 # Solves the Discrete Algebraic Riccati Equation (DARE) at the target equilibrium.
 # This represents the infinite-horizon quadratic cost-to-go of the linearized system.
-if HAS_CONTROL:
-    _, A_eq, B_eq = dyn.dynamics(x_goal, u_goal)
-    QQT = ctrl.dare(A_eq, B_eq, Q_task, R_task)[0]
-   # QQT = QQT * 10000.0  # Scalar tuning multiplier to penalize final offset
-else:
-    QQT = data.QT_task1
+_, A_eq, B_eq = dyn.dynamics(x_goal, u_goal.flatten())
+QQT = ctrl.dare(A_eq, B_eq, Q_task, R_task)[0]
 
  
 # INITIAL GUESS (WARM START)
@@ -75,6 +58,8 @@ uu = np.zeros((data.ni, TT, data.max_iters_task1 + 1))
 
 # Initialize the state trajectory at k=0 with the starting equilibrium
 xx[:, 0, 0] = x_start
+# Warm start the input trajectory with the step reference torque
+uu[:, :, 0] = uu_ref
 tt_hor = np.linspace(0, tf, TT)
 
 # Forward pass rollout for iteration 0 (open-loop simulation of the initial guess)
@@ -94,9 +79,10 @@ xx, uu, descent, descent_arm, JJ, converged_iter = solver_newton.newton_method(
     xx_ref=xx_ref, 
     uu_ref=uu_ref, 
     x0=x_start,
-    QQT=QQT,
     max_iters=data.max_iters_task1, 
-    task_number=1, 
+    Qt=Q_task,
+    Rt=R_task,
+    QT=QQT,
     armijo_plot=True, 
     armijo_plot_number=2, 
     save_path_armijo_base="figs/task1_armijo",
@@ -129,7 +115,7 @@ axs_conv[1].legend()
 
 plt.tight_layout()
 plt.savefig('figs/task1_convergence_metrics.png', dpi=300)
-plt.show(block=False)
+
 
 # --- Plot 2: Optimal State and Input vs Reference ---
 fig_opt, axs_opt = plt.subplots(data.ns + data.ni, 1, figsize=(11, 10), sharex=True)
@@ -154,7 +140,7 @@ axs_opt[data.ns].grid(alpha=0.4)
 
 plt.tight_layout()
 plt.savefig('figs/task1_optimal_trajectory.png', dpi=300)
-plt.show(block=False)
+
 
 # --- Plot 3: Evolution of Intermediate Iterations ---
 fig_inter, axs_inter = plt.subplots(2, 1, figsize=(11, 8), sharex=True)
@@ -182,7 +168,20 @@ axs_inter[1].legend(loc='upper right')
 
 plt.tight_layout()
 plt.savefig('figs/task1_intermediate_trajectories.png', dpi=300)
-plt.show(block=False)
+
+
+# --- Plot 4: Distance from Goal Over Time ---
+fig_dist, ax_dist = plt.subplots(figsize=(10, 5))
+dist_from_goal = np.linalg.norm(xx_star - x_goal.reshape(-1, 1), axis=0)
+ax_dist.plot(tt_hor, dist_from_goal, color='magenta', lw=2, label=r'$\|\mathbf{x}(t) - \mathbf{x}_{goal}\|_2$')
+ax_dist.set_ylabel('Euclidean Distance from Goal', fontsize=12)
+ax_dist.set_xlabel('Time [s]', fontsize=12)
+ax_dist.set_title('Task 1 — Distance from Target Equilibrium State over Time', fontsize=14)
+ax_dist.grid(alpha=0.4)
+ax_dist.legend()
+plt.tight_layout()
+plt.savefig('figs/task1_distance_to_goal.png', dpi=300)
+plt.show()
 
 # Save the final optimal arrays for tracking in Task 3 & 4
 npy_save_path = 'data/optimal_trajectory_task1.npy'

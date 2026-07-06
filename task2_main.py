@@ -13,13 +13,9 @@ import reference_trajectory as ref_gen
 import solver_newton
 import cost as cst
 import armijo
+from equilibrium_finding import find_equilibrium
+import control as ctrl
 
-# Try to load the control library to solve the Discrete Algebraic Riccati Equation (DARE)
-try:
-    import control as ctrl
-    HAS_CONTROL = True
-except ImportError:
-    HAS_CONTROL = False
 
 # =============================================================================
 # SECTION 1 — CONFIGURATION & INITIALIZATION
@@ -38,35 +34,25 @@ os.makedirs('figs', exist_ok=True)
 Q_task = data.Q_task2
 R_task = data.R_task2
 
-# Load start (downward) and goal (upward) target equilibria.
-try:
-    eq_data = np.load('data/equilibrium_data.npy', allow_pickle=True).item()
-    x_start = eq_data['x_eq1']
-    x_goal  = eq_data['x_eq2']
-    u_goal  = eq_data['u_eq2']
-except FileNotFoundError:
-    print("\nWARNING: 'data/equilibrium_data.npy' not found. Defaulting to standard equilibria.")
-    x_start = np.zeros(data.ns)
-    x_goal  = np.array([np.pi, 0.0, 0.0, 0.0])
-    u_goal  = np.array([0.0])
+# Solve for exact start and goal equilibria dynamically
+print("Computing exact system equilibria based on physical parameters...")
+x_start, u_start = find_equilibrium(data.theta2_eq1, data.inverted_eq1, label="Equilibrium 1 (Start)")
+x_goal, u_goal   = find_equilibrium(data.theta2_eq2, data.inverted_eq2, label="Equilibrium 2 (Goal)")
 
 # 3-phase temporal partition: Pre-wait, Move, Post-hold.
 # Helps the solver absorb initial transients and stabilize the terminal state.
-t_pre, t_move, t_post = 5.0, 10.0, 5.0
+t_pre, t_move, t_post = 5.0, 10.0, 15.0
 
 # Generate a smooth C^2 continuous reference trajectory via a quintic polynomial.
 # Quintic Hermite interpolation ensures zero velocity and acceleration at start/end.
 xx_ref, uu_ref, TT, tf, N_pre, N_move = ref_gen.generate_extended(
-    data.dt, x_start, x_goal, t_pre=t_pre, t_move=t_move, t_post=t_post
+    data.dt, x_start, x_goal, u_start, u_goal, t_pre=t_pre, t_move=t_move, t_post=t_post
 )
 tt_hor = np.linspace(0, tf, TT)
 
 # Terminal cost matrix QQT computation (DARE infinite-horizon cost-to-go approximation)
-if HAS_CONTROL:
-    _, A_eq, B_eq = dyn.dynamics(x_goal, u_goal)
-    QQT = ctrl.dare(A_eq, B_eq, Q_task, R_task)[0]
-else:
-    QQT = data.QT_task2
+_, A_eq, B_eq = dyn.dynamics(x_goal, u_goal.flatten())
+QQT = ctrl.dare(A_eq, B_eq, Q_task, R_task)[0]
 
 # =============================================================================
 # SECTION 3 — INITIAL GUESS (WARM START)
@@ -76,13 +62,8 @@ uu = np.zeros((data.ni, TT, data.max_iters_task2 + 1))
 
 # Set initial state for iteration 0
 xx[:, 0, 0] = x_start
+uu[:, :, 0] = uu_ref
 
-# WARM START KICK:
-# A smooth quintic trajectory starting at rest produces zero initial gradients.
-# To break the local minimum at the downward equilibrium, we inject an oscillatory
-# warm-start torque profile to feed kinetic energy into the elbow joint.
-t_kick_local = np.linspace(0, t_move, N_move)
-uu[0, N_pre:N_pre + N_move, 0] = 5.0 * np.sin(3.0 * t_kick_local)
 
 # Forward pass rollout for iteration 0 (open-loop simulation of the warm start)
 for t in range(TT - 1):
@@ -103,7 +84,9 @@ xx, uu, descent, descent_arm, JJ, converged_iter = solver_newton.newton_method(
     uu_ref=uu_ref, 
     x0=x_start, 
     max_iters=data.max_iters_task2, 
-    task_number=2, 
+    Qt=Q_task,
+    Rt=R_task,
+    QT=QQT,
     armijo_plot=True, 
     armijo_plot_number=2, 
     save_path_armijo_base="figs/task2_armijo"
@@ -137,7 +120,7 @@ axs_conv[1].legend()
 
 plt.tight_layout()
 plt.savefig('figs/task2_convergence_metrics.png', dpi=300)
-plt.show(block=False)
+
 
 # --- Plot 2: Optimal State and Input vs Reference ---
 fig_opt, axs_opt = plt.subplots(data.ns+data.ni, 1, figsize=(12, 10), sharex=True)
@@ -167,7 +150,7 @@ axs_opt[data.ns].grid(alpha=0.4)
 
 plt.tight_layout()
 plt.savefig('figs/task2_optimal_trajectory.png', dpi=300)
-plt.show(block=False)
+
 
 # --- Plot 3: Evolution of Intermediate Iterations ---
 fig_inter, axs_inter = plt.subplots(2, 1, figsize=(11, 8), sharex=True)
@@ -195,7 +178,20 @@ axs_inter[1].legend(loc='upper right')
 
 plt.tight_layout()
 plt.savefig('figs/task2_intermediate_trajectories.png', dpi=300)
-plt.show(block=False)
+
+
+# --- Plot 4: Distance from Goal Over Time ---
+fig_dist, ax_dist = plt.subplots(figsize=(10, 5))
+dist_from_goal = np.linalg.norm(xx_star - x_goal.reshape(-1, 1), axis=0)
+ax_dist.plot(tt_hor, dist_from_goal, color='magenta', lw=2, label=r'$\|\mathbf{x}(t) - \mathbf{x}_{goal}\|_2$')
+ax_dist.set_ylabel('Euclidean Distance from Goal', fontsize=12)
+ax_dist.set_xlabel('Time [s]', fontsize=12)
+ax_dist.set_title('Task 2 — Distance from Target Equilibrium State over Time', fontsize=14)
+ax_dist.grid(alpha=0.4)
+ax_dist.legend()
+plt.tight_layout()
+plt.savefig('figs/task2_distance_to_goal.png', dpi=300)
+plt.show()
 
 # Save the final optimal arrays for tracking in Task 3 & 4
 npy_save_path = 'data/optimal_trajectory_task2.npy'

@@ -1,114 +1,73 @@
 #
-# Acrobot — Equilibrium Finding via SQP
+# Acrobot — Equilibrium Finding via scipy.optimize.root
 # Optimal Control Project — Parameter Set 3
 #
 
 import numpy as np
-import scipy.linalg
-from dynamics import dynamics
+from scipy.optimize import root
+from dynamics import step
+import data
 
 
-def _equality_constraint(xx, uu):
+def find_equilibrium(theta2_target, inverted=False, label=""):
     """
-    Evaluates the equilibrium constraint h(x,u) = F(x,u) - x and its Jacobian.
-    h(x, u) = F(x, u) - x   in R^4
-    dh/dz = [dF/dx - I,  dF/du] = [A - I,  B]   in R^(4x5)
-    where A = dF/dx, B = dF/du are discrete dynamics Jacobians.
-    """
-    x_next, A, B = dynamics(xx, uu)
+    Finds an equilibrium (x*, u*) of the Acrobot for a given elbow angle theta2.
 
-    h    = x_next - xx               # (4,) — constraint violation
-    dh_x = A - np.eye(len(xx))       # (4x4)
-    dh_u = B                          # (4x1)
-    dh   = np.hstack([dh_x, dh_u])  # (4x5) — combined Jacobian
+    Uses scipy.optimize.root on the discrete-time RK4 dynamics to find
+    the shoulder angle theta1 and holding torque u such that the system
+    remains stationary: x_{t+1} = x_t  (zero velocity change).
 
-    return h, dh
+    Parameters:
+        theta2_target (float): Desired elbow angle [rad].
+        inverted (bool): If True, selects the inverted (upright) branch.
+                         If False, selects the hanging (downward) branch.
+        label (str): Label for console output.
 
-
-def _cost_quadratic(xx, uu, Q, R, xref, uref):
-    """
-    Quadratic regularization cost to keep the solution close to the initial guess.
-    c(x, u)  = 1/2 (x-xref)^T Q (x-xref) + 1/2 (u-uref)^T R (u-uref)
-    dc/dz    = [Q(x-xref); R(u-uref)]   (combined vector)
-    d^2c/dz^2  = block_diag(Q, R)         (Hessian = B_k in SQP)
-    """
-    dx = xx - xref
-    du = uu - uref
-
-    c    = 0.5 * dx.T @ Q @ dx + 0.5 * du.T @ R @ du
-    dc   = np.hstack([Q @ dx, R @ du])           # (5,)
-    ddc  = scipy.linalg.block_diag(Q, R)         # (5x5)
-
-    return float(c), dc, ddc
-
-
-def find_equilibrium(x_guess, u_guess, label="", max_iters=50, tol=1e-8):
-    """
-    Finds an equilibrium (x*, u*) of the Acrobot with SQP.
-    Iteratively solves the KKT system:
-        [B  dh^T] [delta_z] = [-dc]
-        [dh   0 ] [lambda ] = [-h ]
-    where B = cost Hessian, dh = Jacobian of constraint.
+    Returns:
+        x_eq (np.array): Exact equilibrium state [theta1, theta2, 0, 0].
+        u_eq (np.array): Exact holding torque [tau].
     """
     print(f"\n--- Equilibrium Search: {label} ---")
+    print(f"  Target: theta2 = {np.degrees(theta2_target):.2f} deg, "
+          f"inverted = {inverted}")
 
-    nx, nu = 4, 1
-    nz = nx + nu   # 5 decision variables [x; u]
+    # --- Initial guess ---
+    # Simple branch selection: 0 for hanging, pi for inverted
+    theta1_guess = np.pi if inverted else 0.0
+    u_guess = 0.0
 
-    z = np.hstack([x_guess.flatten(), u_guess.flatten()])   # z0
+    # --- Residual function ---
+    # At equilibrium with zero velocities, after one RK4 step the
+    # velocities must remain zero. We solve for (theta1, u) such that
+    # x_next[2] = 0  and  x_next[3] = 0.
+    def residual(free_vars):
+        th1, u = free_vars
+        xx = np.array([th1, theta2_target, 0.0, 0.0])
+        uu = np.array([u])
+        x_next = step(xx, uu)
+        return [x_next[2], x_next[3]]
 
-    # Regularization cost weights to keep it close to guess
-    Q_reg = np.diag([10.0, 10.0, 1.0, 1.0])
-    R_reg = np.diag([0.1])
+    # --- Solve ---
+    sol = root(residual, [theta1_guess, u_guess], method='hybr')
 
-    for k in range(max_iters):
-        xx_k = z[:nx]
-        uu_k = z[nx:]
+    if not sol.success:
+        print(f"  WARNING: Root-finder did not converge: {sol.message}")
 
-        # 1. Compute cost, gradient, and Hessian
-        _, dc, B_k = _cost_quadratic(xx_k, uu_k, Q_reg, R_reg,
-                                      x_guess.flatten(), u_guess.flatten())
+    theta1_eq = sol.x[0]
+    theta1_eq = np.arctan2(np.sin(theta1_eq), np.cos(theta1_eq)) # if theta1 exceeds [-pi, pi], wrap it back to the principal range
+    tau_eq = sol.x[1]
 
-        # 2. Compute constraint and its Jacobian
-        h_k, dh_k = _equality_constraint(xx_k, uu_k)
+    # --- Assemble result ---
+    x_eq = np.array([theta1_eq, theta2_target, 0.0, 0.0])
+    u_eq = np.array([tau_eq])
 
-        # Convergence check
-        constr_norm = np.linalg.norm(h_k)
-        if k % 10 == 0:
-            print(f"  Iter {k:3d}: ||h|| = {constr_norm:.3e}")
-        if constr_norm < tol:
-            print(f"  Converged! ||h|| = {constr_norm:.2e} (< {tol:.0e}) "
-                  f"at iter {k}.")
-            break
+    # --- Verification ---
+    x_check = step(x_eq, u_eq)
+    residual_norm = np.linalg.norm(x_check - x_eq)
 
-        # 3. Build and solve KKT system (SQP step)
-        KKT = np.block([
-            [B_k,      dh_k.T               ],   # (5x5), (5x4)
-            [dh_k,     np.zeros((nx, nx))   ]    # (4x5), (4x4)
-        ])                                        # total: (9x9)
-
-        rhs = np.hstack([-dc, -h_k])             # (9,)
-
-        try:
-            sol = np.linalg.solve(KKT, rhs)
-        except np.linalg.LinAlgError:
-            print(f"  WARNING [iter {k}]: Singular KKT system. Using pseudo-inverse fallback.")
-            sol = np.linalg.lstsq(KKT, rhs, rcond=None)[0]
-
-        dz = sol[:nz]   # extract only delta_z (Lagrange multipliers are not needed here)
-
-        # 4. Pure Newton step update
-        z = z + dz
-
-    x_eq = z[:nx]
-    u_eq = z[nx:]
-
-    # Final verification
-    x_check, _, _ = dynamics(x_eq, u_eq)
-    err = np.linalg.norm(x_check - x_eq)
     print(f"  Equilibrium: x = {x_eq.round(6)}")
-    print(f"              u = {u_eq.round(6)}")
-    print(f"  Verification F(x*,u*)-x* = {err:.2e}")
+    print(f"               u = {u_eq.round(6)}")
+    print(f"  Verification ||F(x*,u*) - x*|| = {residual_norm:.2e}")
 
     return x_eq, u_eq
 
@@ -118,23 +77,15 @@ def find_equilibrium(x_guess, u_guess, label="", max_iters=50, tol=1e-8):
 # =============================================================================
 if __name__ == "__main__":
 
-    # ---- Equilibrium 1: Downward (rest position) ----
-    x_down_guess = np.array([0.0, 0.0, 0.0, 0.0])
-    u_down_guess = np.array([0.0])
-    x_eq1, u_eq1 = find_equilibrium(x_down_guess, u_down_guess, "DOWNWARD (theta1=0)")
+    # ---- Equilibrium 1 ----
+    x_eq1, u_eq1 = find_equilibrium(
+        data.theta2_eq1, data.inverted_eq1, "Equilibrium 1")
 
-    # ---- Equilibrium 2: Upward (unstable position) ----
-    x_up_guess = np.array([np.pi, 0.0, 0.0, 0.0])
-    u_up_guess = np.array([0.0])
-    x_eq2, u_eq2 = find_equilibrium(x_up_guess, u_up_guess, "UPWARD (theta1=pi)")
+    # ---- Equilibrium 2 ----
+    x_eq2, u_eq2 = find_equilibrium(
+        data.theta2_eq2, data.inverted_eq2, "Equilibrium 2")
 
-    # Save data for other tasks
-    np.save('data/equilibrium_data.npy', {
-        'x_eq1': x_eq1,
-        'x_eq2': x_eq2,
-        'u_eq1': u_eq1,
-        'u_eq2': u_eq2
-    })
-    print("\nEquilibrium data saved to 'data/equilibrium_data.npy'")
-    print(f"x_eq1 (down):   {x_eq1.round(4)}")
-    print(f"x_eq2 (up):    {x_eq2.round(4)}")
+    print(f"\nx_eq1: {x_eq1.round(4)}")
+    print(f"u_eq1: {u_eq1.round(4)}")
+    print(f"x_eq2: {x_eq2.round(4)}")
+    print(f"u_eq2: {u_eq2.round(4)}")

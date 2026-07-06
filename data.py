@@ -23,8 +23,17 @@ g   = 9.81  # Gravity [m/s^2]
 f1  = 1.0   # Viscous friction joint 1 [N*m*s]
 f2  = 1.0   # Viscous friction joint 2 [N*m*s]
 
-# SOLVER PARAMETERS (Newton / iDDP / Armijo)
-max_iters_task1 = 100       # Maximum iteration for step reference (faster to converge)
+# EQUILIBRIUM DEFINITIONS
+# Specify only the desired elbow angle (theta2) and whether the
+# configuration is inverted (upright) or hanging (downward).
+theta2_eq1   = np.radians(-45.0)# Elbow angle for equilibrium 1 [rad]
+inverted_eq1 = False            # False = hanging down
+
+theta2_eq2   = np.radians(45.0) # Elbow angle for equilibrium 2 [rad]
+inverted_eq2 = False            # False = hanging down
+
+# SOLVER PARAMETERS (Newton / Armijo)
+max_iters_task1 = 100      # Maximum iteration for step reference (faster to converge)
 max_iters_task2 = 100      # Maximum iterations for smooth reference (slower to converge)
 term_cond       = 1e-4     # Tolerance on the norm of the gradient ||Du||^2
 
@@ -37,21 +46,19 @@ armijo_term_cond = 1e-6     # Terminal Condition to stop the search
 armijo_plot_resolution = 51 # Number of steps for Armijo plots
 
 # TASK 1 (Step Reference)
-# Discontinuous reference. The acrobot should do aggressive maneuvers.
-# Low value on states to build up inertia.
-Q_task1  = np.diag([1.0, 1.0, 0.00001, 0.00001])
-R_task1  = np.array([[1e-2]])
-QT_task1 = np.diag([1e7, 1e7, 1000.0, 1000.0]) 
+Q_task1  = np.diag([1.0, 1.0, 1e-8, 1e-8])
+R_task1  = np.array([[1e-6]])
+QT_task1 = np.diag([1e10, 1e2, 1e4, 1e4]) # not actually used, we use the DARE solution instead
 
 # TASK 2 (Smooth Quintic Reference)
 # More feasible reference, state weights can be higher.
-Q_task2  = np.diag([2.0, 0.2, 0.1, 0.1])
-R_task2  = np.array([[0.01]])
+Q_task2  = np.diag([1.0, 1.0, 0.1, 0.1])
+R_task2  = np.array([[1e-6]])
 QT_task2 = np.diag([10000.0, 80000.0, 1.0, 1.0]) # Fallback without DARE
 
 # TASK 3 & 4 (LQR / MPC Tracking)
 # Online Tracking: rigid control for initial perturbations.
 # State weights are higher than Task 1 & 2.
-Q_track  = np.diag([1000.0, 1000.0, 100.0, 100.0])
-R_track  = np.array([[0.1]])
-QT_track = np.diag([1000.0, 1000.0, 100.0, 100.0]) # Terminal cost (often replaced by Riccati matrices)
+Q_track  = np.diag([1e6, 1e6, 100.0, 100.0])
+R_track  = np.array([[0.001]])
+QT_track = np.diag([1000.0, 1000.0, 100.0, 100.0]) # not actually used, we use the DARE solution instead

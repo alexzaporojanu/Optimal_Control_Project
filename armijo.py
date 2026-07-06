@@ -24,49 +24,50 @@ def select_stepsize(stepsize_0, armijo_maxiters, cc, beta, deltau, xx_ref, uu_re
       ns = xx_ref.shape[0]
       ni = uu_ref.shape[0]
 
-      for ii in range(armijo_maxiters):
+      with np.errstate(over='ignore', invalid='ignore'):
+            for ii in range(armijo_maxiters):
 
-            # temp solution update
-            xx_temp = np.zeros((ns,TT))
-            uu_temp = np.zeros((ni,TT))
+                  # temp solution update
+                  xx_temp = np.zeros((ns,TT))
+                  uu_temp = np.zeros((ni,TT))
 
-            xx_temp[:,0] = x0
+                  xx_temp[:,0] = x0
 
-            for tt in range(TT-1):
-                  uu_temp[:,tt] = uu[:,tt] + KK[:, :, tt] @ (xx_temp[:,tt] - xx[:,tt]) + stepsize * sigma[:,tt]
+                  for tt in range(TT-1):
+                        uu_temp[:,tt] = uu[:,tt] + KK[:, :, tt] @ (xx_temp[:,tt] - xx[:,tt]) + stepsize * sigma[:,tt]
 
-                  # If you don't want to use the closed loop (2 step procedure way)
-                  # for Newton method comment the line above and uncomment the line below
+                        # If you don't want to use the closed loop (2 step procedure way)
+                        # for Newton method comment the line above and uncomment the line below
 
-                  # uu_temp[:,tt] = uu[:,tt] + stepsize*deltau[:,tt]
-                  xx_temp[:,tt+1] = dyn.step(xx_temp[:,tt], uu_temp[:,tt])
+                        # uu_temp[:,tt] = uu[:,tt] + stepsize*deltau[:,tt]
+                        xx_temp[:,tt+1] = dyn.step(xx_temp[:,tt], uu_temp[:,tt])
 
-            # temp cost calculation
-            JJ_temp = 0
+                  # temp cost calculation
+                  JJ_temp = 0
 
-            for tt in range(TT-1):
-                  temp_cost = cst.stagecost(xx_temp[:,tt], uu_temp[:,tt], xx_ref[:,tt], uu_ref[:,tt], Qt, Rt)[0]
+                  for tt in range(TT-1):
+                        temp_cost = cst.stagecost(xx_temp[:,tt], uu_temp[:,tt], xx_ref[:,tt], uu_ref[:,tt], Qt, Rt)[0]
+                        JJ_temp += temp_cost
+
+                  temp_cost = cst.termcost(xx_temp[:,-1], xx_ref[:,-1],QT)[0]
                   JJ_temp += temp_cost
 
-            temp_cost = cst.termcost(xx_temp[:,-1], xx_ref[:,-1],QT)[0]
-            JJ_temp += temp_cost
+                  # save the stepsize
+                  stepsizes.append(stepsize)      
 
-            # save the stepsize
-            stepsizes.append(stepsize)      
+                  # save the cost associated to the stepsize
+                  costs_armijo.append(JJ_temp)    
 
-            # save the cost associated to the stepsize
-            costs_armijo.append(JJ_temp)    
+                  if np.isnan(JJ_temp) or not np.isfinite(JJ_temp) or JJ_temp > JJ + cc*stepsize*descent_arm:
+                        # update the stepsize
+                        stepsize = beta*stepsize
 
-            if JJ_temp > JJ + cc*stepsize*descent_arm:
-                  # update the stepsize
-                  stepsize = beta*stepsize
-
-            else:
-                  #print(f'Armijo stepsize = {stepsize} at iteration k = {kk}')
-                  break
-            
-            if ii == armijo_maxiters -1:
-                  print("WARNING: no stepsize was found with armijo rule!")
+                  else:
+                        #print(f'Armijo stepsize = {stepsize} at iteration k = {kk}')
+                        break
+                  
+                  if ii == armijo_maxiters -1:
+                        print("WARNING: no stepsize was found with armijo rule!")
 
       # print(f"Armijo at iteration {kk}: stepsize = {stepsize}")  
             
@@ -88,33 +89,34 @@ def select_stepsize(stepsize_0, armijo_maxiters, cc, beta, deltau, xx_ref, uu_re
 
             costs = np.zeros(len(steps))
 
-            for ii_plot in range(len(steps)):
-                  step = steps[ii_plot]
+            with np.errstate(over='ignore', invalid='ignore'):
+                  for ii_plot in range(len(steps)):
+                        step = steps[ii_plot]
 
-                  # temp solution update
-                  xx_temp = np.zeros((ns,TT))
-                  uu_temp = np.zeros((ni,TT))
+                        # temp solution update
+                        xx_temp = np.zeros((ns,TT))
+                        uu_temp = np.zeros((ni,TT))
 
-                  xx_temp[:,0] = x0
-                  for tt in range(TT-1):
-                        uu_temp[:,tt] = uu[:,tt] + KK[:, :, tt] @ (xx_temp[:,tt] - xx[:,tt]) + step * sigma[:,tt]
+                        xx_temp[:,0] = x0
+                        for tt in range(TT-1):
+                              uu_temp[:,tt] = uu[:,tt] + KK[:, :, tt] @ (xx_temp[:,tt] - xx[:,tt]) + step * sigma[:,tt]
+                              
+                              # If you don't want to use the closed loop (2 step procedure way)
+                              # for Newton method comment the line above and uncomment the line below
+                              
+                              # uu_temp[:,tt] = uu[:,tt] + step*deltau[:,tt]
+                              xx_temp[:,tt+1] = dyn.step(xx_temp[:,tt], uu_temp[:,tt])
                         
-                        # If you don't want to use the closed loop (2 step procedure way)
-                        # for Newton method comment the line above and uncomment the line below
-                        
-                        # uu_temp[:,tt] = uu[:,tt] + step*deltau[:,tt]
-                        xx_temp[:,tt+1] = dyn.step(xx_temp[:,tt], uu_temp[:,tt])
-                  
-                  # temp cost computation
-                  JJ_temp = 0
-                  for tt in range(TT-1):
-                        temp_cost = cst.stagecost(xx_temp[:,tt], uu_temp[:,tt], xx_ref[:,tt], uu_ref[:,tt], Qt, Rt)[0]
+                        # temp cost computation
+                        JJ_temp = 0
+                        for tt in range(TT-1):
+                              temp_cost = cst.stagecost(xx_temp[:,tt], uu_temp[:,tt], xx_ref[:,tt], uu_ref[:,tt], Qt, Rt)[0]
+                              JJ_temp += temp_cost
+
+                        temp_cost = cst.termcost(xx_temp[:,-1], xx_ref[:,-1],QT)[0]
                         JJ_temp += temp_cost
 
-                  temp_cost = cst.termcost(xx_temp[:,-1], xx_ref[:,-1],QT)[0]
-                  JJ_temp += temp_cost
-
-                  costs[ii_plot] = JJ_temp
+                        costs[ii_plot] = JJ_temp
 
 
             fig, ax = plt.subplots(figsize=(10, 6))
