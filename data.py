@@ -26,10 +26,10 @@ f2  = 1.0   # Viscous friction joint 2 [N*m*s]
 # EQUILIBRIUM DEFINITIONS
 # Specify only the desired elbow angle (theta2) and whether the
 # configuration is inverted (upright) or hanging (downward).
-theta2_eq1   = np.radians(45.0)# Elbow angle for equilibrium 1 [rad]
+theta2_eq1   = np.radians(-45.0)# Elbow angle for equilibrium 1 [rad]
 inverted_eq1 = False            # False = hanging down
 
-theta2_eq2   = np.radians(-45.0) # Elbow angle for equilibrium 2 [rad]
+theta2_eq2   = np.radians(45.0) # Elbow angle for equilibrium 2 [rad]
 inverted_eq2 = False            # False = hanging down
 
 # SOLVER PARAMETERS (Newton / Armijo)
@@ -38,7 +38,7 @@ max_iters_task2 = 100      # Maximum iterations for smooth reference (slower to 
 term_cond       = 1e-4     # Tolerance on the norm of the gradient ||Du||^2
 
 # Armijo Line Search Parameters
-armijo_c        = 0.5     # Reduction factor (sufficient decrease)
+armijo_c        = 0.5    # Reduction factor (sufficient decrease)
 armijo_beta     = 0.7      # Contraction factor of the step
 armijo_maxiters = 20       # Maximum number of bisections per step
 armijo_stepsize0 = 1       # Initial Armijo Step Size for k=0
@@ -55,13 +55,13 @@ QT_task1 = np.diag([1e10, 1e2, 1e4, 1e4]) # not actually used, we use the DARE s
 # during the quintic move; tracking uses balanced equal weights.
 # Result: swing_θ₂ ≈ 10.4° vs 28.8° with baseline — 64% reduction.
 Q_task2  = np.diag([20.0, 20.0, 1.0, 1.0])   # HIGH weight on θ₂ tracking!
-R_task2  = np.array([[0.01]])                       # Slightly higher control cost
+R_task2  = np.array([[0.001]])                       # Slightly higher control cost
 QT_task2 = np.diag([1000.0, 5000.0, 100.0, 100.0]) # not actually used, we use the DARE solution instead
 
 
 # TASK 3 & 4 (LQR / MPC Tracking)
 # Winner from sweep (C08): balanced equal weights on θ₁ and θ₂ give the best
 # trade-off — err_T_mean=0.037, swing_θ₂=10.4°, swing_θ₁=8.2°.
-Q_track  = np.diag([1000.0, 1000.0, 100.0, 100.0])
+Q_track  = np.diag([1000.0, 1.0, 1000.0, 100.0])
 R_track  = np.array([[0.001]])
 QT_track = np.diag([1000.0, 1000.0, 100.0, 100.0]) # not actually used, we use the DARE solution instead

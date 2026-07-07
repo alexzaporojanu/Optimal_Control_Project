@@ -124,6 +124,9 @@ def newton_method(xx, uu, xx_ref, uu_ref, x0, max_iters, Qt, Rt, QT,
 
         descent[kk] = abs(descent_arm[kk])
 
+        if descent_arm[kk] > 0:
+            print(f"WARNING: Descent direction is not a descent direction at iteration {kk} (descent_arm = {descent_arm[kk]:.3e})")
+
         # Determine armijo save path if plotting is enabled
         save_path = f"{save_path_armijo_base}_{kk}.png" if save_path_armijo_base and armijo_plot and (kk < 1 or kk%10 == 0 or kk==armijo_plot_number or kk==7) else None
 

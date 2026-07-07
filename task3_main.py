@@ -74,9 +74,11 @@ print(f"  Linearization complete: {steps} pairs (A_t, B_t)")
 # =============================================================================
 # SECTION 4 — BACKWARD RICCATI (TV-LQR Design)
 # =============================================================================
-# Compute the DARE terminal cost for tracking using the tracking weights
+# Use the linearization at the goal equilibrium
+x_goal = x_ref_traj[-1]
+u_goal = u_ref_traj[-1]
+_, A_eq, B_eq = dynamics(x_goal, u_goal.flatten())
 import control as ctrl
-A_eq, B_eq = A_list[-1], B_list[-1]
 QQT_track = ctrl.dare(A_eq, B_eq, Q_lqr, R_lqr)[0]
 QQf = QQT_track
 print(f"\nUsing terminal cost Q_T from TV-LQR tracking DARE calculation.")

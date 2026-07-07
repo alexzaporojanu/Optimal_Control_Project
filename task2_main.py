@@ -89,8 +89,8 @@ xx, uu, descent, descent_arm, JJ, converged_iter = solver_newton.newton_method(
     save_path_armijo_base="figs/task2_armijo"
 )
 
-xx_star = xx[:,:, converged_iter]
-uu_star = uu[:,:, converged_iter]
+xx_star = xx[:,:, converged_iter+1]
+uu_star = uu[:,:, converged_iter+1]
 
 # =============================================================================
 # SECTION 5 — FINAL PLOTS

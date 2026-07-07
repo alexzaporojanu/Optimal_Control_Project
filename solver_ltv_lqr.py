@@ -40,10 +40,10 @@ def backward_riccati(A_list, B_list, QQ, RR, QQf, steps):
         K_t = np.linalg.solve(S, B.T @ P @ A)   # (ni x ns)
 
         K_gains[t] = K_t
-        P_list[t]  = P.copy()   # save P_{t+1} associated to this step
 
         # Riccati update: FORM 1 (numerically stable)
         P = QQ + A.T @ P @ (A - B @ K_t)
+        P_list[t]  = P.copy()   # save P_{t+1} associated to this step
 
     return K_gains, P_list
 
@@ -216,5 +216,8 @@ def ltv_LQR_affine(AAin, BBin, QQin, RRin, SSin, QQfin, TT, x0, qqin = None, rri
         uu[:, tt] = KK[:,:,tt] @ xx[:, tt] + sigma[:, tt]
         xx_p = AA[:,:,tt] @ xx[:,tt] + BB[:,:,tt] @ uu[:,tt]
         xx[:,tt+1] = xx_p
+
+    print(f"Max gain: {np.max(np.abs(KK))}")
+    print(f"Max affine term: {np.max(np.abs(sigma))}")
 
     return xx, uu, KK, sigma, PP
