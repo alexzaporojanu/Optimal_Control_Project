@@ -110,8 +110,9 @@ def generate_extended(dt, x_start, x_goal, u_start, u_goal,
     # Concatenation:
     # xx_move[:, :-1] avoids duplicating the junction point between Move and Post
     xx_ref = np.hstack([xx_pre, xx_move[:, :-1], xx_post])
-    uu_ref = np.hstack([uu_pre, uu_move,          uu_post])
+    uu_ref = np.hstack([uu_pre, uu_move, uu_post])
 
     TT = uu_ref.shape[1]
+    xx_ref = np.hstack([xx_ref, xx_ref[:, -1:]])
 
     return xx_ref, uu_ref, TT, tf, N_pre, N_move

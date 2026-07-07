@@ -41,14 +41,14 @@ x_goal, u_goal   = find_equilibrium(data.theta2_eq2, data.inverted_eq2, label="E
 
 # 3-phase temporal partition: Pre-wait, Move, Post-hold.
 # Helps the solver absorb initial transients and stabilize the terminal state.
-t_pre, t_move, t_post = 5.0, 10.0, 15.0
+t_pre, t_move, t_post = 5.0, 10.0, 5.0
 
 # Generate a smooth C^2 continuous reference trajectory via a quintic polynomial.
 # Quintic Hermite interpolation ensures zero velocity and acceleration at start/end.
 xx_ref, uu_ref, TT, tf, N_pre, N_move = ref_gen.generate_extended(
     data.dt, x_start, x_goal, u_start, u_goal, t_pre=t_pre, t_move=t_move, t_post=t_post
 )
-tt_hor = np.linspace(0, tf, TT)
+tt_hor = np.linspace(0, tf, TT+1)
 
 # Terminal cost matrix QQT computation (DARE infinite-horizon cost-to-go approximation)
 _, A_eq, B_eq = dyn.dynamics(x_goal, u_goal.flatten())
@@ -57,16 +57,13 @@ QQT = ctrl.dare(A_eq, B_eq, Q_task, R_task)[0]
 # =============================================================================
 # SECTION 3 — INITIAL GUESS (WARM START)
 # =============================================================================
-xx = np.zeros((data.ns, TT, data.max_iters_task2 + 1))
+xx = np.zeros((data.ns, TT+1, data.max_iters_task2 + 1))
 uu = np.zeros((data.ni, TT, data.max_iters_task2 + 1))
 
-# Set initial state for iteration 0
 xx[:, 0, 0] = x_start
 uu[:, :, 0] = uu_ref
 
-
-# Forward pass rollout for iteration 0 (open-loop simulation of the warm start)
-for t in range(TT - 1):
+for t in range(TT):    
     xx[:, t+1, 0] = dyn.step(xx[:, t, 0], uu[:, t, 0])
 
 # =============================================================================
@@ -131,7 +128,7 @@ state_colors = ['blue', 'cyan', 'green', 'purple']
 
 for i in range(data.ns):
     axs_opt[i].plot(tt_hor, xx_star[i,:], color=state_colors[i], lw=2, label='Optimal')
-    axs_opt[i].plot(tt_hor, xx_ref[i,:TT], color='black', lw=1.5, ls='--', label='Reference')
+    axs_opt[i].plot(tt_hor, xx_ref[i,:], color='black', lw=1.5, ls='--', label='Reference')
     
     # Demarcate pre-wait, move, and post-hold phases physically
     axs_opt[i].axvline(t_pre, color='gray', ls=':', alpha=0.6)
@@ -141,8 +138,8 @@ for i in range(data.ns):
     axs_opt[i].legend(loc='best', fontsize=10)
     axs_opt[i].grid(alpha=0.4)
 
-axs_opt[data.ns].plot(tt_hor, uu_star[0,:], color='red', lw=2, label='Optimal Torque')
-axs_opt[data.ns].plot(tt_hor, uu_ref[0,:TT], color='orange', lw=1.5, ls='--', label='Reference Torque')
+axs_opt[data.ns].plot(tt_hor[:-1], uu_star[0,:], color='red', lw=2, label='Optimal Torque')
+axs_opt[data.ns].plot(tt_hor[:-1], uu_ref[0,:], color='orange', lw=1.5, ls='--', label='Reference Torque')
 axs_opt[data.ns].set_ylabel(r'$\tau$ [Nm]')
 axs_opt[data.ns].set_xlabel('Time [s]')
 axs_opt[data.ns].legend(loc='best', fontsize=10)
@@ -159,7 +156,7 @@ fig_inter.suptitle('Task 2 — Evolution of Intermediate Trajectories', fontsize
 iters_to_plot = sorted(list(set([0, 1, 3, converged_iter])))
 plot_colors = ['gray', 'orange', 'green', 'blue']
 
-axs_inter[0].plot(tt_hor, xx_ref[0, :TT], color='black', ls='--', lw=2, label='Reference (Smooth)')
+axs_inter[0].plot(tt_hor, xx_ref[0, :], color='black', ls='--', lw=2, label='Reference (Smooth)')
 for i, kk_plot in enumerate(iters_to_plot):
     lbl = "Iter 0 (Warm Start)" if kk_plot == 0 else "Converged" if kk_plot == converged_iter else f"Iter {kk_plot}"
     axs_inter[0].plot(tt_hor, xx[0, :, kk_plot], color=plot_colors[i], lw=2, label=lbl, alpha=0.8)
@@ -167,7 +164,7 @@ axs_inter[0].set_ylabel(r'$\theta_1$ [rad]')
 axs_inter[0].grid(alpha=0.4)
 axs_inter[0].legend(loc='upper right')
 
-axs_inter[1].plot(tt_hor, xx_ref[1, :TT], color='black', ls='--', lw=2, label='Reference')
+axs_inter[1].plot(tt_hor, xx_ref[1, :], color='black', ls='--', lw=2, label='Reference')
 for i, kk_plot in enumerate(iters_to_plot):
     lbl = "Iter 0 (Warm Start)" if kk_plot == 0 else "Converged" if kk_plot == converged_iter else f"Iter {kk_plot}"
     axs_inter[1].plot(tt_hor, xx[1, :, kk_plot], color=plot_colors[i], lw=2, label=lbl, alpha=0.8)

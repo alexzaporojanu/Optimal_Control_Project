@@ -53,7 +53,7 @@ try:
     if u_ref_traj.ndim == 1:
         u_ref_traj = u_ref_traj.reshape(-1, 1)
 
-    steps = x_ref_traj.shape[0]
+    steps = x_ref_traj.shape[0] - 1  # 2999 transitions for 3000 states
     print(f"  Trajectory loaded: {steps} steps,  T = {t_axis[-1]:.1f}s")
 
 except FileNotFoundError:
@@ -99,7 +99,7 @@ print("\nSimulating LQR tracking with multiple perturbations...")
 
 for label, pert in perturbations.items():
     x_sim = np.zeros((steps + 1, ns))
-    u_sim = np.zeros((steps, ni))
+    u_sim = np.zeros((steps + 1, ni))  # size TT for plotting
     x_sim[0] = x_ref_traj[0] + pert
 
     for t in range(steps):
@@ -110,9 +110,23 @@ for label, pert in perturbations.items():
         u_sim[t] = u_curr.flatten()
         x_sim[t+1] = step(x_sim[t], u_curr.flatten())
 
-    err_final = np.linalg.norm(x_sim[-2] - x_ref_traj[-1])
+    u_sim[steps] = u_sim[steps - 1]  # Zero-Order Hold for the last step
+
+    err_final = np.linalg.norm(x_sim[-1] - x_ref_traj[-1])
     print(f"  [{label}]: final error ||x_T - x*_T|| = {err_final:.4e}")
     results[label] = {'x_sim': x_sim, 'u_sim': u_sim}
+
+# =============================================================================
+# SECTION 5.5 — SAVE DATA
+# =============================================================================
+np.save('data/lqr_data_task3.npy', {
+    'K_gains': K_gains,
+    'P_list' : P_list,
+    'Q_lqr'  : Q_lqr,
+    'R_lqr'  : R_lqr,
+    'QQf'    : QQf
+})
+print("\nLQR gains and Riccati matrices P_t saved to 'lqr_data_task3.npy'")
 
 # =============================================================================
 # SECTION 6 — PLOT RESULTS
@@ -126,7 +140,7 @@ fig_err.suptitle('Task 3 — Tracking Errors for Different Initial Conditions', 
 colors = ['blue', 'orange', 'green']
 
 for idx, (label, res) in enumerate(results.items()):
-    x_sim_plot = res['x_sim'][:-1, :]
+    x_sim_plot = res['x_sim']
     err_pos1 = np.degrees(x_sim_plot[:, 0] - x_ref_traj[:, 0])
     err_pos2 = np.degrees(x_sim_plot[:, 1] - x_ref_traj[:, 1])
 
@@ -148,7 +162,7 @@ plt.show(block=False)
 # --- PLOT 2: NOMINAL VS OPTIMAL TRACKING (Shown for the shoulder perturbation) ---
 primary_label = 'Pert. shoulder -0.2 rad'
 primary_res = results[primary_label]
-x_sim_primary = primary_res['x_sim'][:-1, :]
+x_sim_primary = primary_res['x_sim']
 u_sim_primary = primary_res['u_sim']
 
 fig_traj, axs_traj = plt.subplots(ns + ni, 1, figsize=(11, 10), sharex=True)
@@ -165,7 +179,7 @@ for i in range(ns):
     axs_traj[i].grid(alpha=0.3)
 
 axs_traj[ns].plot(time, u_sim_primary[:, 0], color='red', lw=2, label='Actual (LQR)')
-axs_traj[ns].plot(time, u_ref_traj[:, 0], color='orange', lw=1.5, ls='--', label='Reference')
+axs_traj[ns].plot(time[:-1], u_ref_traj[:, 0], color='orange', lw=1.5, ls='--', label='Reference')
 axs_traj[ns].set_ylabel(r'$\tau$ [Nm]')
 axs_traj[ns].set_xlabel('Time [s]')
 axs_traj[ns].legend(loc='best', fontsize=9)
@@ -174,8 +188,8 @@ axs_traj[ns].grid(alpha=0.3)
 plt.tight_layout()
 plt.savefig('figs/task3_state_input_tracking.png', dpi=300)
 
-# Set the last plot call to block=True so that the figures stay open on screen
-plt.show(block=True)
+# Set the last plot call to block=False so that the script doesn't block headless execution
+plt.show(block=False)
 
 # =============================================================================
 # SECTION 7 — ANIMATION (Animate only the first perturbation if enabled)
@@ -185,14 +199,4 @@ if SHOW_ANIMATION:
     # Transpose arrays for animation (4, T)
     an.animate_trajectory(time, x_sim_primary.T, x_ref_traj.T, title=f"Task 3 LQR Tracking: {primary_label}")
 
-# =============================================================================
-# SECTION 8 — SAVE DATA
-# =============================================================================
-np.save('data/lqr_data_task3.npy', {
-    'K_gains': K_gains,
-    'P_list' : P_list,
-    'Q_lqr'  : Q_lqr,
-    'R_lqr'  : R_lqr,
-    'QQf'    : QQf
-})
-print("\nLQR gains and Riccati matrices P_t saved to 'lqr_data_task3.npy'")
+

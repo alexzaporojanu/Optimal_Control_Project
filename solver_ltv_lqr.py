@@ -126,10 +126,10 @@ def ltv_LQR_affine(AAin, BBin, QQin, RRin, SSin, QQfin, TT, x0, qqin = None, rri
         SSin = SSin.repeat(TT, axis=2)
 
     # Initialization
-    KK = np.zeros((ni, ns, TT-1))  # K_t
-    sigma = np.zeros((ni, TT-1))  # sigma_t
-    PP = np.zeros((ns, ns, TT))   # P_t
-    pp = np.zeros((ns, TT))       # p_t
+    KK = np.zeros((ni, ns, TT))  # K_t
+    sigma = np.zeros((ni, TT))  # sigma_t
+    PP = np.zeros((ns, ns, TT + 1))   # Now holds P_0 to P_T
+    pp = np.zeros((ns, TT + 1))       # Now holds p_0 to p_T
 
     QQ = QQin
     RR = RRin
@@ -143,17 +143,17 @@ def ltv_LQR_affine(AAin, BBin, QQin, RRin, SSin, QQfin, TT, x0, qqin = None, rri
     AA = AAin
     BB = BBin
 
-    xx = np.zeros((ns, TT))
+    xx = np.zeros((ns, TT + 1))
     uu = np.zeros((ni, TT))
 
     xx[:,0] = x0  # Initialize state trajectory
 
     # Terminal Cost (t=T)
-    PP[:,:,-1] = QQf  # P_T = Q_T
-    pp[:,-1] = qqf    # p_T = q_T
+    PP[:,:,TT] = QQf  
+    pp[:,TT] = qqf 
     
     # Solve Riccati equation backwards in time
-    for tt in reversed(range(TT-1)):
+    for tt in reversed(range(TT)):
         QQ_t = QQ[:,:,tt]
         RR_t = RR[:,:,tt]
         SS_t = SS[:,:,tt]
@@ -183,7 +183,7 @@ def ltv_LQR_affine(AAin, BBin, QQin, RRin, SSin, QQfin, TT, x0, qqin = None, rri
         pp[:,tt] = ppt.squeeze()
 
     # Evaluate KK and sigma (Forward Pass)
-    for tt in range(TT-1):
+    for tt in range(TT):
         PP_p = PP[:,:,tt+1]
         pp_p = pp[:,tt+1][:,None]
         
@@ -212,7 +212,7 @@ def ltv_LQR_affine(AAin, BBin, QQin, RRin, SSin, QQfin, TT, x0, qqin = None, rri
         sigma[:,tt] = sigma_t.squeeze()
 
     # Trajectory Calculation (Forward Integration)
-    for tt in range(TT - 1):
+    for tt in range(TT):
         uu[:, tt] = KK[:,:,tt] @ xx[:, tt] + sigma[:, tt]
         xx_p = AA[:,:,tt] @ xx[:,tt] + BB[:,:,tt] @ uu[:,tt]
         xx[:,tt+1] = xx_p

@@ -28,24 +28,19 @@ def select_stepsize(stepsize_0, armijo_maxiters, cc, beta, deltau, xx_ref, uu_re
             for ii in range(armijo_maxiters):
 
                   # temp solution update
-                  xx_temp = np.zeros((ns,TT))
-                  uu_temp = np.zeros((ni,TT))
+                  xx_temp = np.zeros((ns, TT + 1))
+                  uu_temp = np.zeros((ni, TT))
 
                   xx_temp[:,0] = x0
 
-                  for tt in range(TT-1):
+                  for tt in range(TT):
                         uu_temp[:,tt] = uu[:,tt] + KK[:, :, tt] @ (xx_temp[:,tt] - xx[:,tt]) + stepsize * sigma[:,tt]
-
-                        # If you don't want to use the closed loop (2 step procedure way)
-                        # for Newton method comment the line above and uncomment the line below
-
-                        # uu_temp[:,tt] = uu[:,tt] + stepsize*deltau[:,tt]
                         xx_temp[:,tt+1] = dyn.step(xx_temp[:,tt], uu_temp[:,tt])
 
                   # temp cost calculation
                   JJ_temp = 0
 
-                  for tt in range(TT-1):
+                  for tt in range(TT):
                         temp_cost = cst.stagecost(xx_temp[:,tt], uu_temp[:,tt], xx_ref[:,tt], uu_ref[:,tt], Qt, Rt)[0]
                         JJ_temp += temp_cost
 
@@ -94,22 +89,17 @@ def select_stepsize(stepsize_0, armijo_maxiters, cc, beta, deltau, xx_ref, uu_re
                         step = steps[ii_plot]
 
                         # temp solution update
-                        xx_temp = np.zeros((ns,TT))
-                        uu_temp = np.zeros((ni,TT))
+                        xx_temp = np.zeros((ns, TT + 1))
+                        uu_temp = np.zeros((ni, TT))
 
                         xx_temp[:,0] = x0
-                        for tt in range(TT-1):
+                        for tt in range(TT):
                               uu_temp[:,tt] = uu[:,tt] + KK[:, :, tt] @ (xx_temp[:,tt] - xx[:,tt]) + step * sigma[:,tt]
-                              
-                              # If you don't want to use the closed loop (2 step procedure way)
-                              # for Newton method comment the line above and uncomment the line below
-                              
-                              # uu_temp[:,tt] = uu[:,tt] + step*deltau[:,tt]
                               xx_temp[:,tt+1] = dyn.step(xx_temp[:,tt], uu_temp[:,tt])
                         
                         # temp cost computation
                         JJ_temp = 0
-                        for tt in range(TT-1):
+                        for tt in range(TT):
                               temp_cost = cst.stagecost(xx_temp[:,tt], uu_temp[:,tt], xx_ref[:,tt], uu_ref[:,tt], Qt, Rt)[0]
                               JJ_temp += temp_cost
 

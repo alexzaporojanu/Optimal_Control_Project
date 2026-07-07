@@ -71,7 +71,7 @@ def newton_method(xx, uu, xx_ref, uu_ref, x0, max_iters, Qt, Rt, QT,
     Stilda = np.zeros((ni, ns, TT))
 
     # lambda for the co-state equation
-    lmbd = np.zeros((ns, TT, max_iters+1))    
+    lmbd = np.zeros((ns, TT+1, max_iters+1))    
 
     # Cost and descent direction 
     dJ = np.zeros((ni, TT, max_iters+1))       
@@ -80,7 +80,7 @@ def newton_method(xx, uu, xx_ref, uu_ref, x0, max_iters, Qt, Rt, QT,
     descent_arm = np.zeros(max_iters+1)       
 
     # Decision variables
-    deltax = np.zeros((ns, TT, max_iters+1)) 
+    deltax = np.zeros((ns, TT + 1, max_iters+1)) 
     deltau = np.zeros((ni, TT, max_iters+1)) 
 
     ################################################################################################################
@@ -88,7 +88,7 @@ def newton_method(xx, uu, xx_ref, uu_ref, x0, max_iters, Qt, Rt, QT,
     for kk in range(max_iters):
         J[kk] = 0
 
-        for tt in range(TT-1):
+        for tt in range(TT):
             temp_cost = cst.stagecost(xx[:,tt,kk], uu[:,tt,kk], xx_ref[:,tt], uu_ref[:,tt], Qt, Rt)[0]
             J[kk] += temp_cost
             fx, fu = dyn.dynamics(xx[:,tt,kk], uu[:,tt,kk])[1:]
@@ -97,15 +97,15 @@ def newton_method(xx, uu, xx_ref, uu_ref, x0, max_iters, Qt, Rt, QT,
             
             Qtilda[:,:,tt] = Qt
             Rtilda[:,:,tt] = Rt
-
+            
         term_cost, qT, QTilda = cst.termcost(xx[:,-1,kk], xx_ref[:,-1], QT)
         J[kk] += term_cost
 
         # Descent direction calculation
         lmbd_temp = qT
-        lmbd[:,TT-1,kk] = lmbd_temp.squeeze()
+        lmbd[:,TT,kk] = lmbd_temp.squeeze()
         
-        for tt in reversed(range(TT-1)):                        
+        for tt in reversed(range(TT)):                        
             qt, rt = cst.stagecost(xx[:,tt, kk], uu[:,tt,kk], xx_ref[:,tt], uu_ref[:,tt], Qt, Rt)[1:3]          
 
             lmbd_temp = A[:,:,tt].T @ lmbd[:,tt+1,kk][:,None] + qt.reshape(-1, 1)       # costate equation
@@ -119,7 +119,7 @@ def newton_method(xx, uu, xx_ref, uu_ref, x0, max_iters, Qt, Rt, QT,
         # Solve the Affine LQR problem
         deltax[:,:,kk], deltau[:,:,kk], KK, sigma, _ = lqr.ltv_LQR_affine(A, B, Qtilda, Rtilda, Stilda, QTilda, TT, xx0, q, r, qT.squeeze())
 
-        for tt in reversed(range(TT-1)): 
+        for tt in reversed(range(TT)): 
             descent_arm[kk] += dJ[:,tt,kk].T @ deltau[:,tt,kk] 
 
         descent[kk] = abs(descent_arm[kk])
@@ -130,12 +130,12 @@ def newton_method(xx, uu, xx_ref, uu_ref, x0, max_iters, Qt, Rt, QT,
         stepsize = arm.select_stepsize(stepsize_0, armijo_maxiters, c, beta, deltau[:, :, kk], xx_ref, uu_ref, x0, uu[:, :, kk], xx[:, :, kk], KK, sigma, J[kk], descent_arm[kk], kk, Qt, Rt, QT, armijo_plot, armijo_plot_number, save_path=save_path)
 
         # Update the current solution
-        xx_temp = np.zeros((ns,TT))
-        uu_temp = np.zeros((ni,TT))
+        xx_temp = np.zeros((ns, TT + 1))
+        uu_temp = np.zeros((ni, TT))
 
         xx_temp[:,0] = x0
 
-        for tt in range(TT-1):
+        for tt in range(TT):
             uu_temp[:,tt] = uu[:,tt,kk] + KK[:,:,tt] @ (xx_temp[:,tt] - xx[:,tt,kk]) + stepsize * sigma[:,tt]
             xx_temp[:,tt+1] = dyn.step(xx_temp[:,tt], uu_temp[:,tt])
 
