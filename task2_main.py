@@ -2,11 +2,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 import signal
-
-# Ensure plots don't block Ctrl+C in the terminal
-signal.signal(signal.SIGINT, signal.SIG_DFL)
-plt.rcParams.update({'font.size': 12})
-
 import data                 
 import dynamics as dyn
 import reference_trajectory as ref_gen
@@ -15,6 +10,11 @@ import cost as cst
 import armijo
 from equilibrium_finding import find_equilibrium
 import control as ctrl
+
+# Ensure plots don't block Ctrl+C in the terminal
+signal.signal(signal.SIGINT, signal.SIG_DFL)
+plt.rcParams.update({'font.size': 12})
+
 
 
 # =============================================================================

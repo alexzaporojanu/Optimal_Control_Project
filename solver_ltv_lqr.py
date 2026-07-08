@@ -11,10 +11,8 @@ def backward_riccati(A_list, B_list, QQ, RR, QQf, steps):
     Backward Riccati Equation for TV-LQR.
     Computes the sequence of optimal gains K_t and Riccati matrices P_t
     by solving the discrete-time Riccati equation backwards in time.
-    Standard Riccati equation form:
-        S_t = R + B_t^T P_{t+1} B_t
-        K_t = S_t^-1 B_t^T P_{t+1} A_t
-        P_t = Q + A_t^T P_{t+1} A_t - (A_t^T P_{t+1} B_t) K_t
+    
+    Uses FORM 2 (Joseph Form) for maximum numerical robustness.
     """
     K_gains = [None] * steps   # K_t for t = 0, ..., steps-1
     P_list  = [None] * steps   # P_t for reference and MPC terminal cost
@@ -31,21 +29,25 @@ def backward_riccati(A_list, B_list, QQ, RR, QQf, steps):
         S = RR + B.T @ P @ B
 
         # K_t = S_t^-1 B_t^T P_{t+1} A_t — optimal feedback gain
-        # Use np.linalg.solve instead of inv for numerical stability
         K_t = np.linalg.solve(S, B.T @ P @ A)   # (ni x ns)
 
         K_gains[t] = K_t
 
-        # Riccati update: FORM 1 (numerically stable)
-        P = QQ + A.T @ P @ (A - B @ K_t)
+        # Riccati update: FORM 2 (Joseph Form - Robustified Symmetric Update)
+        # P_t = Q + A_cl^T P_{t+1} A_cl + K_t^T R K_t
+        A_cl = A - B @ K_t
+        P = QQ + A_cl.T @ P @ A_cl + K_t.T @ RR @ K_t
+        
         P_list[t]  = P.copy()   # save P_{t+1} associated to this step
 
     return K_gains, P_list
 
 
-def ltv_LQR_affine(AAin, BBin, QQin, RRin, SSin, QQfin, TT, x0, qqin = None, rrin = None, qqfin = None):
+def ltv_LQR_affine(AAin, BBin, QQin, RRin, SSin, QQfin, TT, x0, qqin=None, rrin=None, qqfin=None):
     """
     Solves the LQR problem for LTV system with (time-varying) affine cost, using the Riccati equation.
+    Uses the Robustified Closed-Loop (Joseph) Form for maximum stability during Newton iterations.
+    
     Parameters:
         - AAin (ns x ns (x TT))                State dynamics matrix.
         - BBin (ns x ni (x TT))                Input dynamics matrix.
@@ -122,9 +124,9 @@ def ltv_LQR_affine(AAin, BBin, QQin, RRin, SSin, QQfin, TT, x0, qqin = None, rri
 
     # Initialization
     KK = np.zeros((ni, ns, TT))  # K_t
-    sigma = np.zeros((ni, TT))  # sigma_t
-    PP = np.zeros((ns, ns, TT + 1))   # Now holds P_0 to P_T
-    pp = np.zeros((ns, TT + 1))       # Now holds p_0 to p_T
+    sigma = np.zeros((ni, TT))   # sigma_t
+    PP = np.zeros((ns, ns, TT + 1))   # Holds P_0 to P_T
+    pp = np.zeros((ns, TT + 1))       # Holds p_0 to p_T
 
     QQ = QQin
     RR = RRin
@@ -168,41 +170,20 @@ def ltv_LQR_affine(AAin, BBin, QQin, RRin, SSin, QQfin, TT, x0, qqin = None, rri
 
         Sigma_t = SS_t + BB_t.T @ PP_p @ AA_t
         
-        # 2. Riccati update P_t
-        PPt = QQ_t + AA_t.T @ PP_p @ AA_t - Sigma_t.T @ MMt_inv @ Sigma_t
+        # 2. Compute Gains (Moved to backward pass for efficiency)
+        KKt = - MMt_inv @ Sigma_t
+        sigma_t = - MMt_inv @ mmt
         
-        # 3. Affine vector update p_t
-        ppt = qq_t + AA_t.T @ pp_p - Sigma_t.T @ MMt_inv @ mmt
+        # 3. Robustified Riccati update P_t (Joseph Form with cross-terms)
+        A_cl = AA_t + BB_t @ KKt
+        PPt = QQ_t + KKt.T @ RR_t @ KKt + KKt.T @ SS_t + SS_t.T @ KKt + A_cl.T @ PP_p @ A_cl
+        
+        # 4. Robustified Affine vector update p_t
+        ppt = qq_t + A_cl.T @ pp_p + KKt.T @ rr_t
 
+        # Save values for this timestep
         PP[:,:,tt] = PPt
         pp[:,tt] = ppt.squeeze()
-
-    # Evaluate KK and sigma (Forward Pass)
-    for tt in range(TT):
-        PP_p = PP[:,:,tt+1]
-        pp_p = pp[:,tt+1][:,None]
-        
-        QQ_t = QQ[:,:,tt]
-        RR_t = RR[:,:,tt]
-        BB_t = BB[:,:,tt]
-        SS_t = SS[:,:,tt]
-        AA_t = AA[:,:,tt]
-
-        qq_t = qq[:, tt][:,None]
-        rr_t = rr[:, tt][:,None]
-        
-        MMt = RR_t + BB_t.T @ PP_p @ BB_t
-        MMt_inv = np.linalg.inv(MMt)
-        
-        Sigma_t = SS_t + BB_t.T @ PP_p @ AA_t
-        mmt = rr_t + BB_t.T @ pp_p  
-       
-        # 1. Gain K_t
-        KKt = - MMt_inv @ Sigma_t
-
-        # 2. Bias sigma_t
-        sigma_t = - MMt_inv @ mmt
-
         KK[:,:,tt] = KKt  
         sigma[:,tt] = sigma_t.squeeze()
 

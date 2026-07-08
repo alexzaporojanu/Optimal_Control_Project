@@ -25,7 +25,7 @@ print("=" * 60)
 print("   Task 3: Trajectory Tracking — TV-LQR")
 print("=" * 60)
 # Toggle for rendering the visual animation at the end
-SHOW_ANIMATION = False  
+SHOW_ANIMATION = True  
 ns, ni = data.ns, data.ni
 # TV-LQR Weights
 Q_lqr = data.Q_track   # state weight
@@ -90,7 +90,7 @@ print("  Backward Riccati complete.")
 # SECTION 5 — TRACKING SIMULATION WITH MULTIPLE PERTURBATIONS
 # =============================================================================
 perturbations = {
-    'Pert. shoulder -0.2 rad': np.array([-0.4,  0.0, 0.0, 0.0]),
+    'Pert. shoulder -0.4 rad': np.array([-0.4,  0.0, 0.0, 0.0]),
     'Pert. elbow +0.3 rad'   : np.array([ 0.0,  0.3, 0.0, 0.0]),
     'Pert. vel. shoulder'    : np.array([ 0.0,  0.0, 0.3, 0.0]),
 }
@@ -161,7 +161,7 @@ plt.show(block=False)
 
 
 # --- PLOT 2: NOMINAL VS OPTIMAL TRACKING (Shown for the shoulder perturbation) ---
-primary_label = 'Pert. shoulder -0.2 rad'
+primary_label = 'Pert. shoulder -0.4 rad'
 primary_res = results[primary_label]
 x_sim_primary = primary_res['x_sim']
 u_sim_primary = primary_res['u_sim']
