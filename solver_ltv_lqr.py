@@ -33,10 +33,8 @@ def backward_riccati(A_list, B_list, QQ, RR, QQf, steps):
 
         K_gains[t] = K_t
 
-        # Riccati update: FORM 2 (Joseph Form - Robustified Symmetric Update)
-        # P_t = Q + A_cl^T P_{t+1} A_cl + K_t^T R K_t
-        A_cl = A - B @ K_t
-        P = QQ + A_cl.T @ P @ A_cl + K_t.T @ RR @ K_t
+        # Riccati update: Traditional Form
+        P = QQ + A.T @ P @ A - (A.T @ P @ B) @ K_t
         
         P_list[t]  = P.copy()   # save P_{t+1} associated to this step
 
@@ -174,12 +172,11 @@ def ltv_LQR_affine(AAin, BBin, QQin, RRin, SSin, QQfin, TT, x0, qqin=None, rrin=
         KKt = - MMt_inv @ Sigma_t
         sigma_t = - MMt_inv @ mmt
         
-        # 3. Robustified Riccati update P_t (Joseph Form with cross-terms)
-        A_cl = AA_t + BB_t @ KKt
-        PPt = QQ_t + KKt.T @ RR_t @ KKt + KKt.T @ SS_t + SS_t.T @ KKt + A_cl.T @ PP_p @ A_cl
+        # 3. Traditional Riccati update P_t
+        PPt = QQ_t + AA_t.T @ PP_p @ AA_t - Sigma_t.T @ MMt_inv @ Sigma_t
         
-        # 4. Robustified Affine vector update p_t
-        ppt = qq_t + A_cl.T @ pp_p + KKt.T @ rr_t
+        # 4. Traditional Affine vector update p_t
+        ppt = qq_t + AA_t.T @ pp_p - Sigma_t.T @ MMt_inv @ mmt
 
         # Save values for this timestep
         PP[:,:,tt] = PPt
