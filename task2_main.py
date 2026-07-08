@@ -55,7 +55,7 @@ _, A_eq, B_eq = dyn.dynamics(x_goal, u_goal.flatten())
 QQT = ctrl.dare(A_eq, B_eq, Q_task, R_task)[0]
 
 # =============================================================================
-# SECTION 3 — INITIAL GUESS (WARM START)
+# SECTION 3 — INITIAL GUESS
 # =============================================================================
 xx = np.zeros((data.ns, TT+1, data.max_iters_task2 + 1))
 uu = np.zeros((data.ni, TT, data.max_iters_task2 + 1))
@@ -158,7 +158,7 @@ plot_colors = ['gray', 'orange', 'green', 'blue']
 
 axs_inter[0].plot(tt_hor, xx_ref[0, :], color='black', ls='--', lw=2, label='Reference (Smooth)')
 for i, kk_plot in enumerate(iters_to_plot):
-    lbl = "Iter 0 (Warm Start)" if kk_plot == 0 else "Converged" if kk_plot == converged_iter else f"Iter {kk_plot}"
+    lbl = "Iter 0" if kk_plot == 0 else "Converged" if kk_plot == converged_iter else f"Iter {kk_plot}"
     axs_inter[0].plot(tt_hor, xx[0, :, kk_plot], color=plot_colors[i], lw=2, label=lbl, alpha=0.8)
 axs_inter[0].set_ylabel(r'$\theta_1$ [rad]')
 axs_inter[0].grid(alpha=0.4)
@@ -166,7 +166,7 @@ axs_inter[0].legend(loc='upper right')
 
 axs_inter[1].plot(tt_hor, xx_ref[1, :], color='black', ls='--', lw=2, label='Reference')
 for i, kk_plot in enumerate(iters_to_plot):
-    lbl = "Iter 0 (Warm Start)" if kk_plot == 0 else "Converged" if kk_plot == converged_iter else f"Iter {kk_plot}"
+    lbl = "Iter 0" if kk_plot == 0 else "Converged" if kk_plot == converged_iter else f"Iter {kk_plot}"
     axs_inter[1].plot(tt_hor, xx[1, :, kk_plot], color=plot_colors[i], lw=2, label=lbl, alpha=0.8)
 axs_inter[1].set_ylabel(r'$\theta_2$ [rad]')
 axs_inter[1].set_xlabel('Time [s]')

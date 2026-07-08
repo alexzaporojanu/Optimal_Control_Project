@@ -7,15 +7,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 import signal
 import os
+from dynamics        import dynamics, step
+from solver_ltv_lqr  import backward_riccati
+import data
+import animation as an
+import control as ctrl
 
 # Ensure plots don't block Ctrl+C
 signal.signal(signal.SIGINT, signal.SIG_DFL)
 plt.rcParams.update({'font.size': 13})
 
-from dynamics        import dynamics, step
-from solver_ltv_lqr  import backward_riccati
-import data
-import animation as an
 
 # =============================================================================
 # SECTION 1 — CONFIGURATION & SETTINGS
@@ -23,15 +24,15 @@ import animation as an
 print("=" * 60)
 print("   Task 3: Trajectory Tracking — TV-LQR")
 print("=" * 60)
-
-ns, ni = data.ns, data.ni
-
 # Toggle for rendering the visual animation at the end
-SHOW_ANIMATION = True  
-
+SHOW_ANIMATION = False  
+ns, ni = data.ns, data.ni
 # TV-LQR Weights
 Q_lqr = data.Q_track   # state weight
 R_lqr = data.R_track   # input weight
+
+
+
 
 # =============================================================================
 # SECTION 2 — REFERENCE TRAJECTORY LOADING
@@ -78,10 +79,8 @@ print(f"  Linearization complete: {steps} pairs (A_t, B_t)")
 x_goal = x_ref_traj[-1]
 u_goal = u_ref_traj[-1]
 _, A_eq, B_eq = dynamics(x_goal, u_goal.flatten())
-import control as ctrl
-QQT_track = ctrl.dare(A_eq, B_eq, Q_lqr, R_lqr)[0]
-QQf = QQT_track
-print(f"\nUsing terminal cost Q_T from TV-LQR tracking DARE calculation.")
+QQf = ctrl.dare(A_eq, B_eq, Q_lqr, R_lqr)[0]
+print("\nUsing terminal cost Q_T from TV-LQR tracking DARE calculation.")
 
 print("Computing Riccati backward (TV-LQR)...")
 K_gains, P_list = backward_riccati(A_list, B_list, Q_lqr, R_lqr, QQf, steps)
@@ -91,7 +90,7 @@ print("  Backward Riccati complete.")
 # SECTION 5 — TRACKING SIMULATION WITH MULTIPLE PERTURBATIONS
 # =============================================================================
 perturbations = {
-    'Pert. shoulder -0.2 rad': np.array([-0.2,  0.0, 0.0, 0.0]),
+    'Pert. shoulder -0.2 rad': np.array([-0.4,  0.0, 0.0, 0.0]),
     'Pert. elbow +0.3 rad'   : np.array([ 0.0,  0.3, 0.0, 0.0]),
     'Pert. vel. shoulder'    : np.array([ 0.0,  0.0, 0.3, 0.0]),
 }

@@ -26,10 +26,10 @@ f2  = 1.0   # Viscous friction joint 2 [N*m*s]
 # EQUILIBRIUM DEFINITIONS
 # Specify only the desired elbow angle (theta2) and whether the
 # configuration is inverted (upright) or hanging (downward).
-theta2_eq1   = np.radians(-45.0)# Elbow angle for equilibrium 1 [rad]
+theta2_eq1   = np.radians(-180.0)# Elbow angle for equilibrium 1 [rad]
 inverted_eq1 = False            # False = hanging down
 
-theta2_eq2   = np.radians(45.0) # Elbow angle for equilibrium 2 [rad]
+theta2_eq2   = np.radians(180.0) # Elbow angle for equilibrium 2 [rad]
 inverted_eq2 = False            # False = hanging down
 
 # SOLVER PARAMETERS (Newton / Armijo)
@@ -46,7 +46,7 @@ armijo_term_cond = 1e-6     # Terminal Condition to stop the search
 armijo_plot_resolution = 51 # Number of steps for Armijo plots
 
 # TASK 1 (Step Reference)
-Q_task1  = np.diag([20.0, 20.0, 1.0, 1.0])
+Q_task1  = np.diag([200.0, 20.0, 10.0, 1.0])
 R_task1  = np.array([[1e-3]])
 QT_task1 = np.diag([1e10, 1e2, 1e4, 1e4]) # not actually used, we use the DARE solution instead
 
@@ -62,6 +62,6 @@ QT_task2 = np.diag([1000.0, 5000.0, 100.0, 100.0]) # not actually used, we use t
 # TASK 3 & 4 (LQR / MPC Tracking)
 # Winner from sweep (C08): balanced equal weights on θ₁ and θ₂ give the best
 # trade-off — err_T_mean=0.037, swing_θ₂=10.4°, swing_θ₁=8.2°.
-Q_track  = np.diag([1000.0, 1.0, 1000.0, 100.0])
+Q_track  = np.diag([100.0, 1.0, 100, 10.0])   
 R_track  = np.array([[0.001]])
 QT_track = np.diag([1000.0, 1000.0, 100.0, 100.0]) # not actually used, we use the DARE solution instead

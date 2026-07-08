@@ -11,15 +11,10 @@ def backward_riccati(A_list, B_list, QQ, RR, QQf, steps):
     Backward Riccati Equation for TV-LQR.
     Computes the sequence of optimal gains K_t and Riccati matrices P_t
     by solving the discrete-time Riccati equation backwards in time.
-    Standard Riccati equation form (FORM 1):
+    Standard Riccati equation form:
         S_t = R + B_t^T P_{t+1} B_t
         K_t = S_t^-1 B_t^T P_{t+1} A_t
         P_t = Q + A_t^T P_{t+1} A_t - (A_t^T P_{t+1} B_t) K_t
-    Equivalently (FORM 2):
-        P_t = Q + (A_t - B_t K_t)^T P_{t+1} (A_t - B_t K_t) + K_t^T R K_t
-    The two forms are mathematically equivalent but FORM 1 is more
-    numerically stable (avoids subtraction of large matrices).
-    Therefore, we use FORM 1.
     """
     K_gains = [None] * steps   # K_t for t = 0, ..., steps-1
     P_list  = [None] * steps   # P_t for reference and MPC terminal cost

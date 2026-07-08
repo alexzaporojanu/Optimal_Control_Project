@@ -35,7 +35,7 @@ print("=" * 60)
 ns, ni = data.ns, data.ni
 
 # Toggle for rendering the visual animation at the end
-SHOW_ANIMATION = True
+SHOW_ANIMATION = False
 
 # MPC Parameters
 T_pred  = 100       # Prediction horizon [steps]
@@ -230,7 +230,7 @@ for label, pert in perturbations.items():
         delta_u0, DX_guess, DU_guess, status = solve_mpc_step(delta_x0, t, DX_guess, DU_guess)
 
         if status == 'ok':
-            # Shift the predicted states/controls by one step for warm start
+            # Shift the predicted states/controls by one step
             DX_guess = np.hstack([DX_guess[:, 1:], DX_guess[:, -1:]])
             DU_guess = np.hstack([DU_guess[:, 1:], DU_guess[:, -1:]])
         else:
