@@ -22,7 +22,7 @@ print("=" * 60)
 os.makedirs('data', exist_ok=True)
 
 # 1. SIMULATION PARAMETERS
-tf = 10.0                          # Time horizon in seconds
+tf = data.tf_task0                 # Time horizon in seconds
 TT = int(tf / data.dt)             # Discrete steps based on RK4 step dt
 tt_hor = np.linspace(0, tf, TT)    # Time grid
 
@@ -33,7 +33,7 @@ uu = np.zeros((data.ni, TT))       # Control input trajectory (zero torque)
 
 # Set initial state: drop the robot from a horizontal position
 # x0 = [theta1, theta2, omega1, omega2]^T
-x0 = np.array([np.pi/2, 0.0, 0.0, 0.0])
+x0 = data.x0_task0
 xx[:, 0] = x0
 
 # 3. FORWARD SIMULATION

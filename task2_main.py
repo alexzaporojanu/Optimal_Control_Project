@@ -39,9 +39,11 @@ print("Computing exact system equilibria based on physical parameters...")
 x_start, u_start = find_equilibrium(data.theta2_eq1, data.inverted_eq1, label="Equilibrium 1 (Start)")
 x_goal, u_goal   = find_equilibrium(data.theta2_eq2, data.inverted_eq2, label="Equilibrium 2 (Goal)")
 
-# 3-phase temporal partition: Pre-wait, Move, Post-hold.
+# 3-phase temporal partition: Pre-wait, Move, Post-hold (loaded from data.py).
 # Helps the solver absorb initial transients and stabilize the terminal state.
-t_pre, t_move, t_post = 5.0, 10.0, 5.0
+t_pre = data.t_pre_task2
+t_move = data.t_move_task2
+t_post = data.t_post_task2
 
 # Generate a smooth C^2 continuous reference trajectory via a quintic polynomial.
 # Quintic Hermite interpolation ensures zero velocity and acceleration at start/end.

@@ -26,7 +26,7 @@ os.makedirs('figs', exist_ok=True)
 
 # Problem Dimensions:
 # ns = data.ns (state space), ni = data.ni (input space). time step dt = 0.01s.
-tf = 10.0           
+tf = data.tf_task1           
 TT = int(tf / data.dt)   # Total number of time steps (3000 steps)
 
 

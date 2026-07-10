@@ -12,7 +12,6 @@ def backward_riccati(A_list, B_list, QQ, RR, QQf, steps):
     Computes the sequence of optimal gains K_t and Riccati matrices P_t
     by solving the discrete-time Riccati equation backwards in time.
     
-    Uses FORM 2 (Joseph Form) for maximum numerical robustness.
     """
     K_gains = [None] * steps   # K_t for t = 0, ..., steps-1
     P_list  = [None] * steps   # P_t for reference and MPC terminal cost

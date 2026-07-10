@@ -24,8 +24,8 @@ plt.rcParams.update({'font.size': 13})
 print("=" * 60)
 print("   Task 3: Trajectory Tracking — TV-LQR")
 print("=" * 60)
-# Toggle for rendering the visual animation at the end
-SHOW_ANIMATION = True  
+# Toggle for rendering the visual animation at the end (loaded from data.py)
+SHOW_ANIMATION = data.show_animation_task3  
 ns, ni = data.ns, data.ni
 # TV-LQR Weights
 Q_lqr = data.Q_track   # state weight
@@ -89,11 +89,8 @@ print("  Backward Riccati complete.")
 # =============================================================================
 # SECTION 5 — TRACKING SIMULATION WITH MULTIPLE PERTURBATIONS
 # =============================================================================
-perturbations = {
-    'Pert. shoulder -0.4 rad': np.array([-0.4,  0.0, 0.0, 0.0]),
-    'Pert. elbow +0.3 rad'   : np.array([ 0.0,  0.3, 0.0, 0.0]),
-    'Pert. vel. shoulder'    : np.array([ 0.0,  0.0, 0.3, 0.0]),
-}
+# Load perturbations from data.py to evaluate controller robustness
+perturbations = data.perturbations_task3
 
 results = {}
 print("\nSimulating LQR tracking with multiple perturbations...")
@@ -128,6 +125,15 @@ np.save('data/lqr_data_task3.npy', {
     'QQf'    : QQf
 })
 print("\nLQR gains and Riccati matrices P_t saved to 'lqr_data_task3.npy'")
+
+# Save primary perturbation tracking trajectory for animation.py compatibility
+primary_label = 'Pert. shoulder -0.4 rad'
+np.save('data/optimal_trajectory_task3.npy', {
+    'x': results[primary_label]['x_sim'],
+    'u': results[primary_label]['u_sim'],
+    't': t_axis
+})
+print("Task 3 tracking trajectory saved to 'optimal_trajectory_task3.npy'")
 
 # =============================================================================
 # SECTION 6 — PLOT RESULTS

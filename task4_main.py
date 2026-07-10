@@ -19,7 +19,6 @@ plt.rcParams.update({'font.size': 13})
 # Import CasADi for MPC optimization
 try:
     import casadi as ca
-    HAS_CASADI = True
 except ImportError:
     print("ERROR: CasADi not found. Install with: pip install casadi")
     exit()
@@ -34,12 +33,12 @@ print("=" * 60)
 
 ns, ni = data.ns, data.ni
 
-# Toggle for rendering the visual animation at the end
-SHOW_ANIMATION = False
+# Toggle for rendering the visual animation at the end (loaded from data.py)
+SHOW_ANIMATION = data.show_animation_task4
 
-# MPC Parameters
-T_pred  = 100       # Prediction horizon [steps]
-U_MAX   = 30.0      # Absolute torque limit [Nm]
+# MPC Parameters (loaded from data.py)
+T_pred  = data.T_pred_mpc       # Prediction horizon [steps]
+U_MAX   = data.U_MAX_mpc       # Absolute torque limit [Nm]
 
 # Weights (loaded from data.py)
 Q_mpc  = data.Q_track
@@ -86,7 +85,6 @@ try:
     data_dict3   = np.load('data/lqr_data_task3.npy', allow_pickle=True).item()
     P_list  = data_dict3['P_list']
     print(f"  LQR Task 3 data loaded: {len(P_list)} Riccati matrices")
-    USE_RICCATI_TERMINAL = True
     P_list_padded = list(P_list)
     for _ in range(T_pred + 5):
         P_list_padded.append(P_list_padded[-1])
@@ -94,25 +92,33 @@ try:
 except FileNotFoundError:
     print("  WARNING: 'data/lqr_data_task3.npy' not found.")
     print("  Using Q_T = Q_mpc as terminal cost (sub-optimal).")
-    USE_RICCATI_TERMINAL = False
     P_list_padded = [Q_mpc] * (steps + T_pred + 10)
 
 # =============================================================================
-# SECTION 3 — LINEARIZATION ALONG REFERENCE TRAJECTORY
+# SECTION 3 — LINEARIZATION & PADDING ALONG THE NOMINAL TRAJECTORY
 # =============================================================================
 print("\nLinearization along reference trajectory...")
 A_list, B_list = [], []
+
+# Linearize the continuous/RK4 non-linear dynamics at each timestep 't'
+# around the optimal reference trajectory (x_ref, u_ref) to obtain the
+# time-varying discrete-time matrices: A_t = df/dx, B_t = df/du
 for t in range(steps):
     _, A, B = dynamics(x_ref_traj[t], u_ref_traj[t].flatten())
     A_list.append(A)
     B_list.append(B)
 
-# Pad A_list and B_list to allow constant prediction horizon T_pred at the end of the trajectory
+# PADDING STRATEGY FOR CONSTANT SOLVER HORIZON:
+# Near the end of the simulation (t > steps - T_pred), we still want to look ahead 
+# by T_pred steps. Instead of shrinking the horizon size (which requires reconstructing 
+# the entire optimization problem structure and re-compiling the solver), we pad the 
+# system matrices (A_t, B_t) and reference input (u_ref) by repeating the final state's 
+# linearization values. This allows us to keep a constant horizon length T_pred=100.
 for _ in range(T_pred + 5):
     A_list.append(A_list[-1])
     B_list.append(B_list[-1])
 
-# Pad u_ref_traj
+# Pad the reference control input as well (to keep constraint limits well-defined)
 u_ref_traj_padded = np.vstack([u_ref_traj, np.tile(u_ref_traj[-1], (T_pred + 5, 1))])
 
 print(f"  Linearization complete: {steps} pairs (A_t, B_t), padded for constant horizon.")
@@ -120,40 +126,56 @@ print(f"  Linearization complete: {steps} pairs (A_t, B_t), padded for constant 
 # =============================================================================
 # SECTION 4 — MPC SOLVER SETUP (Pre-compiled CasADi Opti)
 # =============================================================================
+# Best practice: Setup the optimization problem structure ONCE outside the loop.
+# We formulate the MPC in error coordinates (deviation variables):
+#   DX = x_actual - x_ref   and   DU = u_actual - u_ref
+# This keeps the quadratic objective centered at the origin, improving solver numerical scaling.
 print("Setting up and compiling LTV-MPC solver (CasADi Opti)...")
 opti = ca.Opti()
 
-# Variables
+# DECISION VARIABLES (over the prediction horizon T_pred):
+# DX[:, k] represents the state deviation at prediction step k
+# DU[:, k] represents the control input deviation at prediction step k
 DX = opti.variable(ns, T_pred + 1)
 DU = opti.variable(ni, T_pred)
 
-# Parameters
-dx0_param = opti.parameter(ns, 1)
-A_params  = [opti.parameter(ns, ns) for _ in range(T_pred)]
-B_params  = [opti.parameter(ns, ni) for _ in range(T_pred)]
-u_ref_params = [opti.parameter(1, 1) for _ in range(T_pred)]
-P_term_param = opti.parameter(ns, ns)
+# SOLVER PARAMETERS (placeholders updated at every simulation step):
+# Using parameters (ca.Opti.parameter) is critical: it lets us modify the initial 
+# conditions, linearization matrices, reference inputs, and terminal weights 
+# without re-compiling or re-creating the IPOPT solver instance.
+dx0_param = opti.parameter(ns, 1)                      # Current state error (x_actual(t) - x_ref(t))
+A_params  = [opti.parameter(ns, ns) for _ in range(T_pred)] # Time-varying A matrices along the horizon
+B_params  = [opti.parameter(ns, ni) for _ in range(T_pred)] # Time-varying B matrices along the horizon
+u_ref_params = [opti.parameter(1, 1) for _ in range(T_pred)] # Nominal reference input along the horizon
+P_term_param = opti.parameter(ns, ns)                  # Riccati terminal cost weight (matrix)
 
+# COST FUNCTION FORMULATION:
+# Stage cost: J_stage = sum_{k=0}^{N-1} (DX_k^T * Q * DX_k + DU_k^T * R * DU_k)
 cost = 0.0
 for k in range(T_pred):
     cost += ca.mtimes([DX[:, k].T, ca.DM(Q_mpc), DX[:, k]])
     cost += ca.mtimes([DU[:, k].T, ca.DM(R_mpc), DU[:, k]])
 
-    # Linearized dynamics constraint
+    # Linearized Error Dynamics Constraints:
+    # DX_{k+1} = A_k * DX_k + B_k * DU_k
     opti.subject_to(DX[:, k+1] == A_params[k] @ DX[:, k] + B_params[k] @ DU[:, k])
 
-    # Control input constraint
+    # Absolute Actuator Saturation Boundary:
+    # The actual applied torque must satisfy -U_MAX <= u_ref + DU <= U_MAX.
+    # Therefore: -U_MAX - u_ref_k <= DU_k <= U_MAX - u_ref_k.
     opti.subject_to(opti.bounded(-U_MAX - u_ref_params[k], DU[:, k], U_MAX - u_ref_params[k]))
 
-# Terminal cost
+# Terminal tracking cost: DX_N^T * P_term * DX_N
+# Setting P_term equal to the LQR Riccati matrix (cost-to-go) ensures closed-loop stability.
 cost += ca.mtimes([DX[:, T_pred].T, P_term_param, DX[:, T_pred]])
 
-# Initial state constraint
+# Initial state constraint: DX_0 must equal the measured initial tracking deviation
 opti.subject_to(DX[:, 0] == dx0_param)
 
+# Define the minimization objective
 opti.minimize(cost)
 
-# quiet options
+# Silence IPOPT printout during iterations to keep simulation outputs clean
 ipopt_opts_silent = ipopt_opts.copy()
 ipopt_opts_silent["print_time"] = 0
 opti.solver("ipopt", ipopt_opts_silent)
@@ -161,22 +183,31 @@ opti.solver("ipopt", ipopt_opts_silent)
 print("  MPC solver pre-compiled successfully.")
 
 def solve_mpc_step(delta_x0, t_idx, DX_initial=None, DU_initial=None):
-    # Set initial state
+    """
+    Updates the pre-compiled solver parameters for the current step and solves the QP.
+    Also handles warm-starting the NLP variables to accelerate convergence.
+    """
+    # 1. Update initial state parameter
     opti.set_value(dx0_param, delta_x0.reshape(ns, 1))
 
-    # Set parameters along the prediction horizon
+    # 2. Update time-varying system dynamics parameters along the prediction horizon
     for k in range(T_pred):
         t_k = t_idx + k
         opti.set_value(A_params[k], A_list[t_k])
         opti.set_value(B_params[k], B_list[t_k])
         opti.set_value(u_ref_params[k], u_ref_traj_padded[t_k, 0])
 
-    # Terminal cost weight
+    # 3. Update the terminal cost parameter using the Riccati matrix corresponding 
+    # to time t_idx + T_pred (loaded from the LQR results of Task 3)
     t_term = t_idx + T_pred
     P_term = P_list_padded[t_term - 1]
     opti.set_value(P_term_param, P_term)
 
-    # Warm start
+    # 4. WARM-STARTING THE SOLVER:
+    # If a guess from the previous timestep is available, pass it to the solver.
+    # Because closed-loop trajectory tracking errors change slowly, initializing the 
+    # optimization variables near the optimal solution allows IPOPT to converge 
+    # in just 1 or 2 iterations.
     if DX_initial is not None:
         opti.set_initial(DX, DX_initial)
     if DU_initial is not None:
@@ -188,7 +219,9 @@ def solve_mpc_step(delta_x0, t_idx, DX_initial=None, DU_initial=None):
         DX_val = np.array(sol.value(DX)).reshape(ns, T_pred + 1)
         DU_val = np.array(sol.value(DU)).reshape(ni, T_pred)
         return delta_u0, DX_val, DU_val, 'ok'
-    except Exception as e:
+    except Exception:
+        # Fallback in case IPOPT fails to find an optimal solution (e.g. max iterations reached).
+        # We try to extract the last feasible debug values rather than crashing.
         try:
             delta_u0 = np.array(opti.debug.value(DU[:, 0])).flatten()
             DX_val = np.array(opti.debug.value(DX)).reshape(ns, T_pred + 1)
@@ -201,10 +234,8 @@ def solve_mpc_step(delta_x0, t_idx, DX_initial=None, DU_initial=None):
 # =============================================================================
 # SECTION 5 — MPC RECEDING HORIZON LOOP
 # =============================================================================
-perturbations = {
-    'Pert. shoulder -0.2 rad': np.array([-0.2,  0.0, 0.0, 0.0]),
-    'Pert. elbow +0.3 rad'   : np.array([ 0.0,  0.3, 0.0, 0.0]),
-}
+# Load perturbations from data.py to evaluate controller robustness
+perturbations = data.perturbations_task4
 
 results = {}
 
@@ -213,24 +244,34 @@ for label, pert in perturbations.items():
     print(f"  MPC Simulation: {label}")
     print(f"{'='*50}")
 
+    # Pre-allocate tracking simulation trajectories
     x_sim = np.zeros((steps + 1, ns))
-    u_sim = np.zeros((steps + 1, ni))  # size TT for plotting
+    u_sim = np.zeros((steps + 1, ni))  
+    
+    # Initialize the simulation state with the perturbation offset
     x_sim[0] = x_ref_traj[0] + pert
 
     failed_steps = 0
     DX_guess = None
     DU_guess = None
 
+    # Main Closed-Loop Receding Horizon Control loop
     for t in range(steps):
         if t % 500 == 0 or t == steps - 1:
             err_t = np.linalg.norm(x_sim[t] - x_ref_traj[t])
             print(f"  t={t:4d}/{steps}: ||delta_x|| = {err_t:.3e}")
 
+        # A. Measure the current tracking error deviation
         delta_x0 = x_sim[t] - x_ref_traj[t]
+        
+        # B. Call the MPC solver to find the optimal control deviation sequence
         delta_u0, DX_guess, DU_guess, status = solve_mpc_step(delta_x0, t, DX_guess, DU_guess)
 
         if status == 'ok':
-            # Shift the predicted states/controls by one step
+            # C. Shift the predicted state and control trajectories by 1 step:
+            # We discard the first element (which is applied now) and append the final 
+            # predicted element to the end. This shifted trajectory serves as the 
+            # warm-start guess for the next timestep.
             DX_guess = np.hstack([DX_guess[:, 1:], DX_guess[:, -1:]])
             DU_guess = np.hstack([DU_guess[:, 1:], DU_guess[:, -1:]])
         else:
@@ -238,12 +279,14 @@ for label, pert in perturbations.items():
             DX_guess = None
             DU_guess = None
 
+        # D. Apply the control action: u(t) = u_ref(t) + delta_u*(t)
         u_applied   = u_ref_traj[t].flatten() + delta_u0
         u_sim[t]    = u_applied
 
+        # E. Propagate the real non-linear dynamics of the Acrobot using the RK4 step
         x_sim[t+1] = step(x_sim[t], u_applied)
 
-    u_sim[steps] = u_sim[steps - 1]  # Zero-Order Hold for the last step
+    u_sim[steps] = u_sim[steps - 1]  # Zero-Order Hold for the very last step
 
     err_final = np.linalg.norm(x_sim[-1] - x_ref_traj[-1])
     print(f"\n  Final error: ||x_T - x*_T|| = {err_final:.4e}")
@@ -260,6 +303,15 @@ np.save('data/mpc_results_task4.npy', {
     'U_MAX'  : U_MAX,
 })
 print("\nTask 4 MPC results saved to 'mpc_results_task4.npy'")
+
+# Save primary perturbation tracking trajectory for animation.py compatibility
+primary_label = 'Pert. shoulder -0.2 rad'
+np.save('data/optimal_trajectory_task4.npy', {
+    'x': results[primary_label]['x_sim'],
+    'u': results[primary_label]['u_sim'],
+    't': t_axis
+})
+print("Task 4 tracking trajectory saved to 'optimal_trajectory_task4.npy'")
 
 # =============================================================================
 # SECTION 6 — PLOT RESULTS
@@ -335,5 +387,4 @@ if SHOW_ANIMATION:
     print(f"\nStarting animation for: {primary_label}")
     # Transpose arrays for animation (4, T)
     an.animate_trajectory(time, x_sim_primary.T, x_ref_traj.T, title=f"Task 4 MPC Tracking: {primary_label}")
-
-
+    
